@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Loeme Loreframe · Studio</title>
+  <link rel="stylesheet" href="./styles.css?v=20260629-sound-card-collapse" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark">Lo</div>
+        <div>
+          <strong>Loeme Loreframe</strong>
+          <span>studio · v0.1</span>
+        </div>
+      </div>
+
+      <div class="template-field">
+        <button class="template-trigger" id="template-trigger" type="button" aria-haspopup="dialog" title="新建项目时选择模板">
+          <strong id="template-current-label">民间怪谈竖屏</strong>
+          <em>⌄</em>
+        </button>
+      </div>
+
+      <div class="agent-field" id="agent-picker">
+        <span>Agent</span>
+        <button class="agent-trigger" id="agent-trigger" type="button" aria-expanded="false" aria-haspopup="menu">
+          <i class="agent-dot ready"></i>
+          <b class="agent-avatar codex">⌘</b>
+          <strong id="agent-current-label">Codex CLI</strong>
+          <em>⌄</em>
+        </button>
+        <div class="agent-menu" id="agent-menu" role="menu" hidden>
+          <button class="agent-option" type="button" data-agent="deepseek">
+            <i class="agent-dot muted"></i><b class="agent-avatar deepseek">DS</b><span>DeepSeek API</span><small>config needed</small>
+          </button>
+          <button class="agent-option active" type="button" data-agent="codex">
+            <i class="agent-dot ready"></i><b class="agent-avatar codex">⌘</b><span>Codex CLI</span><small>ready</small>
+          </button>
+        </div>
+      </div>
+
+      <nav class="top-links" aria-label="Project links">
+        <a href="#">GitHub</a>
+        <a href="#">Docs</a>
+      </nav>
+
+      <button class="icon-action" id="settings-btn" type="button" aria-label="Settings">⚙</button>
+      <button class="primary-action" id="render-btn" type="button">预览 / 导出</button>
+    </header>
+
+    <main class="workspace">
+      <aside class="projects-pane" aria-label="Projects">
+        <div class="projects-head">
+          <h2>项目</h2>
+          <button id="new-project" type="button">+ 新建</button>
+          <button class="project-collapse-action" id="toggle-projects-pane" type="button" aria-expanded="true" title="收起项目栏">‹</button>
+        </div>
+        <div class="project-list" id="project-list"></div>
+      </aside>
+
+      <section class="chat-pane" aria-label="AI conversation">
+        <div class="chat-head">
+          <div>
+            <strong>创作对话</strong>
+            <span id="chat-scope-label">当前作用域：文案</span>
+          </div>
+          <span class="status-badge ready">ready</span>
+          <button class="collapse-action" id="toggle-chat-pane" type="button" aria-expanded="true" title="收起创作对话">‹</button>
+        </div>
+
+        <div class="chat-messages" id="chat-messages"></div>
+
+        <div class="chat-composer">
+          <textarea id="prompt-input" rows="4" placeholder="确认文案、重分章节、改当前图片或调整全片配乐。"></textarea>
+          <div class="composer-footer">
+            <span id="composer-status">Cmd / Ctrl + Enter 发送</span>
+            <button class="primary-action" id="send-prompt" type="button">发送</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="production-pane content-pane" aria-label="Video preview and content">
+        <section class="preview-panel" aria-label="Local preview">
+          <div class="panel-head compact">
+            <div>
+              <strong>视频预览</strong>
+              <span id="preview-meta">CH-02 · 00:18-00:40</span>
+            </div>
+            <span class="status-badge ready" id="preview-status">ready</span>
+          </div>
+
+          <div class="preview-wrap">
+            <div class="video-frame">
+              <div class="scene-art">
+                <div class="moon"></div>
+                <div class="ground"></div>
+                <div class="tree tree-a"></div>
+                <div class="tree tree-b"></div>
+                <div class="mist mist-a"></div>
+                <div class="mist mist-b"></div>
+              </div>
+              <div class="video-copy">
+                <span id="preview-kicker">民间怪谈 · CH-02</span>
+                <h1 id="preview-title">草垛后的笑声</h1>
+                <p id="preview-subtitle">农村女人抱着孩子走夜路，草垛阴影里似乎有人影。</p>
+              </div>
+              <div class="subtitle-line" id="subtitle-line">老张的妻子抱着孩子，从打谷场旁边经过时，忽然听见草垛后面传来一阵笑声。</div>
+            </div>
+          </div>
+
+          <div class="preview-actions playback-actions" aria-label="预览播放器">
+            <button class="player-control" id="preview-play" type="button" aria-label="播放" title="播放"><span class="play-icon" aria-hidden="true"></span></button>
+            <div class="player-timeline" aria-label="预览进度">
+              <span id="player-current-time">00:18</span>
+              <div class="player-track"><span id="preview-progress"></span></div>
+              <span id="player-duration">00:40</span>
+            </div>
+            <button class="player-control" id="preview-pause" type="button" aria-label="暂停" title="暂停"><span class="pause-icon" aria-hidden="true"></span></button>
+          </div>
+        </section>
+
+
+        <section class="global-config-stack" aria-label="Global audio and music settings">
+          <header class="global-config-head">
+            <div>
+              <strong>全片声音与音乐</strong>
+              <span>同一张卡片里区分配音和配乐，统一作用于当前视频。</span>
+            </div>
+            <button class="global-config-toggle" id="global-config-toggle" type="button" aria-expanded="true" title="收起全片声音与音乐">
+              <span class="status-badge ready">global</span>
+              <em id="global-config-caret">⌃</em>
+            </button>
+          </header>
+          <div class="global-config-body">
+            <section class="global-audio-panel" id="global-audio-panel" aria-label="Audio settings">
+              <button class="global-audio-toggle" id="audio-panel-toggle" type="button" aria-expanded="true">
+                <span class="audio-icon audio-icon-voice" aria-hidden="true">A</span>
+                <strong>Audio · 全片配音</strong>
+                <small>旁白服务、音色、语速和情绪</small>
+                <em id="audio-panel-caret">⌃</em>
+              </button>
+              <div class="global-audio-detail" id="global-audio-detail">
+                <div class="audio-config-grid audio-only">
+                  <label class="field"><span>Provider</span><select><option>Tencent Cloud TTS</option><option>Local voice cache</option></select></label>
+                  <label class="field"><span>Voice</span><select><option>云希 · 悬疑男声</option><option>云沐 · 温和男声</option><option>云叶 · 叙事女声</option></select></label>
+                  <label class="field"><span>Tencent VoiceType</span><select><option>沉稳青叔 · 男声</option><option>温和青年 · 男声</option><option>叙事女声</option></select></label>
+                </div>
+                <div class="audio-config-grid audio-controls">
+                  <div class="field range-field"><span>Tencent speed</span><div><small>-1</small><input type="range" min="-2" max="2" value="-1" /><small>slow</small></div></div>
+                  <label class="field"><span>Emotion</span><select><option>story</option><option>suspense</option><option>calm</option></select></label>
+                  <div class="field range-field"><span>Narration volume</span><div><small>voice</small><input type="range" min="-12" max="6" value="0" /><small>0 dB</small></div></div>
+                </div>
+                <p class="audio-note">Audio 只管理旁白生成；章节卡片只展示配音状态，选中章节后通过对话或右侧详情触发本章配音。</p>
+              </div>
+            </section>
+
+            <section class="global-music-panel" id="global-music-panel" aria-label="Music settings">
+              <button class="global-music-toggle" id="music-panel-toggle" type="button" aria-expanded="true">
+                <span class="audio-icon music-icon" aria-hidden="true">♪</span>
+                <strong>Music · 全片配乐</strong>
+                <small>BGM、音乐库和混音音量</small>
+                <em id="music-panel-caret">⌃</em>
+              </button>
+              <div class="global-music-detail" id="global-music-detail">
+                <div class="music-config-grid">
+                  <label class="field"><span>Music source</span><select><option>Local library</option><option>Third-party library</option><option>AI music draft</option></select></label>
+                  <label class="field"><span>BGM</span><select><option>Low Drone 01</option><option>Empty Field</option><option>Muted Pulse</option></select></label>
+                  <div class="field range-field"><span>Music volume</span><div><small>bgm</small><input type="range" min="-24" max="0" value="-8" /><small>-8 dB</small></div></div>
+                </div>
+                <p class="audio-note">Music 只管理背景音乐和音乐资产；换 BGM、调整氛围和混音音量都走这一层。</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="chapters-panel" aria-label="Chapters">
+          <div class="panel-head compact">
+            <div>
+              <strong>章节目录</strong>
+              <span id="chapter-summary">4 章 · 1 张图缺失 · 2 段配音待生成</span>
+            </div>
+            <button class="panel-collapse-action" id="chapter-panel-toggle" type="button" aria-expanded="true" title="收起章节目录">
+              <span id="chapter-panel-caret">⌃</span>
+            </button>
+          </div>
+          <div class="chapter-list" id="chapter-list"></div>
+        </section>
+      </section>
+
+      <aside class="inspector-pane" aria-label="Current chapter">
+        <div class="inspector-head">
+          <span>当前选中</span>
+          <strong id="inspector-title">CH-02 · 草垛后的笑声</strong>
+        </div>
+        <div class="inspector-content" id="inspector-content"></div>
+      </aside>
+    </main>
+
+    <div class="feedback-stack" id="feedback-stack" aria-live="polite"></div>
+  </div>
+
+  <div class="modal-backdrop" id="settings-modal" hidden>
+    <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <header>
+        <h2 id="settings-title">Settings</h2>
+        <button type="button" id="settings-close" aria-label="Close">×</button>
+      </header>
+      <div class="settings-body">
+        <aside>
+          <button class="active" type="button" data-settings="agents">Agent</button>
+          <button type="button" data-settings="audio">Audio</button>
+          <button type="button" data-settings="music">Music</button>
+          <button type="button" data-settings="templates">模板</button>
+          <button type="button" data-settings="output">输出</button>
+        </aside>
+        <div id="settings-content"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="new-project-modal" hidden>
+    <section class="new-project-modal" role="dialog" aria-modal="true" aria-labelledby="new-project-title">
+      <header>
+        <div>
+          <h2 id="new-project-title">新建项目</h2>
+          <span>先选择模板，再开始文案和章节生产。</span>
+        </div>
+        <button type="button" id="new-project-close" aria-label="Close">×</button>
+      </header>
+      <div class="new-project-body">
+        <section>
+          <div class="modal-section-head">
+            <strong>选择模板</strong>
+            <span id="new-project-template-summary">民间怪谈竖屏 · 1080×1920 · 9:16</span>
+          </div>
+          <div class="new-template-grid" id="new-template-grid"></div>
+        </section>
+        <aside class="new-project-form">
+          <label class="field">
+            <span>项目名称</span>
+            <input id="new-project-name" value="未命名短故事" />
+          </label>
+          <label class="field">
+            <span>视频类型</span>
+            <select id="new-project-type">
+              <option>短故事</option>
+              <option>太平广记</option>
+              <option>有声图</option>
+            </select>
+          </label>
+          <div class="new-project-preview" id="new-project-preview"></div>
+          <button class="primary-action" id="create-project" type="button">创建项目</button>
+        </aside>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="delete-project-modal" hidden>
+    <section class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-project-title">
+      <header>
+        <div>
+          <h2 id="delete-project-title">删除项目</h2>
+          <span>删除后会从项目列表和本地对话线程中移除。</span>
+        </div>
+        <button type="button" id="delete-project-close" aria-label="Close">×</button>
+      </header>
+      <div class="confirm-body">
+        <p>确认删除 <strong id="delete-project-name">这个项目</strong> 吗？</p>
+        <span>这个操作只影响当前工作台数据，不会删除你磁盘里的素材文件。</span>
+      </div>
+      <footer class="confirm-actions">
+        <button type="button" id="delete-project-cancel">取消</button>
+        <button class="danger-action" type="button" id="delete-project-confirm">删除项目</button>
+      </footer>
+    </section>
+  </div>
+
+  <script src="./app.js?v=20260629-sound-card-collapse"></script>
+</body>
+</html>

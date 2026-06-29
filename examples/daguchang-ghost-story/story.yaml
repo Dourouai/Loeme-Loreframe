@@ -1,0 +1,46 @@
+id: daguchang-ghost-story-001
+title: 零几年农村真实怪谈：凡是半夜路过打谷场的人，最后都疯了
+type: folk_horror
+duration_sec: 244
+aspect_ratio: "16:9"
+language: zh-CN
+source:
+  kind: original_outline
+  text: |
+    村口有一片打谷场，白天热闹，夜里无人敢去。
+    老张的妻子抱着孩子夜里经过，听见草垛后有人笑。
+style:
+  visual_preset: chinese_folk_horror
+  voice_preset: suspense_male
+  music_preset: low_drone
+publish:
+  channel: chinese-folk-ghost-stories
+  audience: general
+  ai_disclosure_required: review
+scenes:
+  - id: scene-001
+    title: 村口打谷场
+    status: draft
+    narration: 村口的打谷场，白天热闹，夜里却没人敢靠近。
+    image_prompt: 零几年中国农村夜晚，空荡打谷场，远处老槐树，昏黄月光，中式民俗恐怖
+    negative_prompt: 血腥，正脸怪物，现代城市，高饱和卡通
+    motion:
+      type: slow_push_in
+      transition: fade_in
+    review:
+      locked_text: false
+      risk_flags: []
+    duration_sec: 18
+  - id: scene-002
+    title: 草垛后的笑声
+    status: draft
+    narration: 老张的妻子抱着孩子从那里经过时，忽然听见草垛后面传来一阵孩子的笑声。
+    image_prompt: 农村女人抱着孩子走夜路，草垛阴影里似乎有人影，悬疑气氛
+    negative_prompt: 血腥，正脸怪物，过度惊吓，现代城市，高饱和卡通
+    motion:
+      type: slow_push_in
+      transition: crossfade
+    review:
+      locked_text: false
+      risk_flags: []
+    duration_sec: 22

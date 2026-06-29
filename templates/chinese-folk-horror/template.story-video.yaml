@@ -1,0 +1,63 @@
+spec_version: 1
+id: chinese-folk-horror
+name: Chinese Folk Horror
+description: >
+  Rural Chinese folk horror for narrated image videos: empty village roads,
+  threshing fields, ancestral halls, old houses, oil lamps, fog, and restrained suspense.
+template_class: story_style
+category: folk_horror
+tags:
+  - 民间怪谈
+  - 农村
+  - 鬼故事
+  - 悬疑
+  - horror
+best_for:
+  - 零几年农村怪谈
+  - 民间传闻改写
+  - 夜路、祠堂、荒宅、打谷场等场景
+not_for:
+  - 明亮轻松的神话科普
+  - 复杂数据可视化
+  - 搞笑短剧
+visual:
+  palette:
+    background: "#17130f"
+    accent: "#c08a4a"
+    subtitle: "#f5e8cf"
+  typography:
+    title: serif
+    body: sans
+  image_prompt_rules:
+    - 使用中式民俗恐怖、低饱和、电影感、雾气、暗角。
+    - 优先场景真实感，不要怪物正脸暴露。
+    - 避免现代城市、高科技物件、夸张血腥。
+motion:
+  default_scene_motion: slow_push_in
+  transitions:
+    - crossfade
+    - dip_to_black
+  overlays:
+    - film_grain
+    - vignette
+    - candle_flicker
+subtitles:
+  format: ass
+  position: bottom_safe
+  max_lines: 2
+  keyword_highlight: true
+audio:
+  narration_mood: low_suspense
+  bgm_mood: dark_drone
+  sfx:
+    - wind
+    - distant_knock
+license:
+  spdx: MIT
+  attribution_required: false
+provenance:
+  origin:
+    kind: tradition
+    name: Chinese folk horror storytelling tradition
+  transformation:
+    notes: Original style preset authored for Loeme Loreframe.

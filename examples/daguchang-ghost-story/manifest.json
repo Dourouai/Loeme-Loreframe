@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-28T05:53:48.141Z",
+  "project": {
+    "id": "daguchang-ghost-story-001",
+    "title": "零几年农村真实怪谈：凡是半夜路过打谷场的人，最后都疯了",
+    "type": "folk_horror",
+    "aspect_ratio": "16:9",
+    "duration_sec": 244,
+    "language": "zh-CN"
+  },
+  "scene_count": 2,
+  "assets": [
+    {
+      "kind": "story",
+      "path": "story.yaml"
+    },
+    {
+      "kind": "script",
+      "path": "script.md"
+    },
+    {
+      "kind": "publish",
+      "path": "publish.json"
+    }
+  ],
+  "review": {
+    "ai_disclosure_required": "review",
+    "warnings": [
+      "title contains '真实'; review wording and AI disclosure before publishing"
+    ]
+  }
+}

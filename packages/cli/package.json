@@ -1,0 +1,24 @@
+{
+  "name": "@story-video/cli",
+  "version": "0.0.0",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "story-video": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@story-video/core": "workspace:*",
+    "@story-video/providers": "workspace:*",
+    "@story-video/render-ffmpeg": "workspace:*",
+    "@story-video/runtime": "workspace:*",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}

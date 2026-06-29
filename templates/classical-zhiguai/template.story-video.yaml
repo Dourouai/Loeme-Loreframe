@@ -1,0 +1,63 @@
+spec_version: 1
+id: classical-zhiguai
+name: Classical Zhiguai
+description: >
+  Classical Chinese supernatural story style for Liaozhai, Taiping Guangji,
+  and public-domain zhiguai source adaptation.
+template_class: story_style
+category: classical_zhiguai
+tags:
+  - 聊斋
+  - 太平广记
+  - 志怪
+  - 古籍
+  - classical
+best_for:
+  - 古籍志怪白话改写
+  - 因果报应故事
+  - 书生、寺庙、山路、狐鬼、异僧题材
+not_for:
+  - 现代农村真实怪谈
+  - 星座神话科普
+  - 强节奏营销视频
+visual:
+  palette:
+    background: "#1d1812"
+    accent: "#b48a54"
+    subtitle: "#efe5d2"
+  typography:
+    title: serif
+    body: serif
+  image_prompt_rules:
+    - 使用古代中国、卷轴纸纹、烛火、山寺、庭院、书斋、淡墨与暗金。
+    - 人物服饰应保持古代语境。
+    - 避免现代电灯、电线、塑料、汽车等元素。
+motion:
+  default_scene_motion: slow_pan
+  transitions:
+    - ink_fade
+    - crossfade
+  overlays:
+    - paper_texture
+    - candle_flicker
+    - subtle_smoke
+subtitles:
+  format: ass
+  position: bottom_safe
+  max_lines: 2
+  keyword_highlight: true
+audio:
+  narration_mood: calm_storyteller
+  bgm_mood: guqin_dark_ambient
+  sfx:
+    - page_turn
+    - temple_bell
+license:
+  spdx: MIT
+  attribution_required: false
+provenance:
+  origin:
+    kind: tradition
+    name: Classical Chinese zhiguai literature
+  transformation:
+    notes: Original style preset authored for Loeme Loreframe.
