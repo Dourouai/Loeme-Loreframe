@@ -111,6 +111,14 @@ New project modal:
 
 Template selection is part of creation. The top template control opens the new-project/template modal; it does not switch the current project's template.
 
+Creating a project only creates an empty project shell and its own chat thread. It must not preload demo chapters, default images, default narration text, or template sample content. Script, chapter list, image prompts, generated images, and narration tasks appear only after the user starts generation through the project chat.
+
+Before generated content exists:
+
+- The video preview shows a waiting-for-content state.
+- The chapter list shows `0 章 · 等待对话生成`.
+- The right chapter panel shows that no chapter is selected yet.
+
 ### 5.2 Project Chat
 
 Every project has its own chat thread.
@@ -152,7 +160,7 @@ Each chapter has:
 
 The chapter list is for navigation and status review. It should not become an operation-heavy board.
 
-Chapter-level operations belong in the right detail panel or project chat:
+Chapter-level operations belong in the middle current-content detail panel or project chat:
 
 - Optimize text.
 - Generate image.
@@ -209,7 +217,7 @@ Chapter cards only show narration/image state. They do not show BGM controls.
 The current Studio has four columns:
 
 ```text
-Project list | Project chat | Production workspace | Chapter detail
+Project list | Project chat | Production workspace | Chapter navigation
 ```
 
 ### 6.1 Top Bar
@@ -246,6 +254,14 @@ Project cards show:
 - Duration.
 - Status.
 
+Project persistence rules:
+
+- Default projects are first-run seed data only.
+- User-created projects persist across refresh.
+- Deleted projects, including default seed projects, must not reappear after refresh.
+- Project deletion also removes the project's local chat thread and draft state.
+- The list may be empty; the Studio should show an empty state and guide the user to create a new project.
+
 ### 6.3 Project Chat
 
 Project chat shows:
@@ -259,19 +275,15 @@ The chat panel can collapse.
 
 ### 6.4 Production Workspace
 
+Middle workspace is a single scrollable content column. It should have one subtle vertical scrollbar and avoid nested scrolling where possible.
+
 Middle workspace order:
 
 1. Video preview.
 2. Global Audio/Music card.
-3. Chapter directory.
+3. Current content detail.
 
-The chapter directory can collapse. Collapsed state keeps title and summary only.
-
-### 6.5 Chapter Detail Panel
-
-Right panel shows only the selected chapter.
-
-It includes:
+Current content detail includes:
 
 - Current selected chapter title.
 - Image preview and image prompt.
@@ -281,6 +293,15 @@ It includes:
   - Optimize text.
   - Generate image.
   - Generate narration.
+
+### 6.5 Chapter Navigation Panel
+
+Right panel shows the chapter directory for navigation and status review.
+
+- It shows chapter title, time range, image state, and narration state.
+- It is used to select the current chapter.
+- It can collapse; collapsed state keeps title and summary only.
+- It does not show BGM controls or chapter operation buttons.
 
 Global audio and music controls do not live here.
 
@@ -511,8 +532,9 @@ Minimum Studio acceptance:
 - Project delete asks for confirmation.
 - Video preview is visible.
 - Global Audio/Music card is one card and can collapse.
-- Chapter directory can collapse.
-- Right detail panel follows selected chapter.
+- Middle workspace scrolls as one complete content column.
+- Chapter directory lives in the right panel and can collapse.
+- Current content detail follows selected chapter in the middle workspace.
 - Settings separates Agent, Audio, Music, Template, and Output.
 
 ## 15. Cleanup Rules

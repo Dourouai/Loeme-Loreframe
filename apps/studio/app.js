@@ -1,4 +1,8 @@
-const projects = [
+const PROJECTS_STORAGE_KEY = "loeme.projects.v1";
+const PROJECT_THREADS_STORAGE_KEY = "loeme.projectThreads.v1";
+const ACTIVE_PROJECT_STORAGE_KEY = "loeme.activeProjectId.v1";
+
+const defaultProjects = [
   {
     id: "daguchang",
     title: "零几年农村真实怪谈：打谷场",
@@ -28,7 +32,7 @@ const projects = [
   }
 ];
 
-const projectThreads = {
+const defaultProjectThreads = {
   daguchang: {
     composeMode: "image",
     draft: "",
@@ -142,7 +146,7 @@ const templateLooks = {
   }
 };
 
-const chapters = [
+const demoChapters = [
   {
     id: "ch-01",
     title: "村口打谷场",
@@ -378,8 +382,20 @@ function currentVideoBgmLabel() {
 }
 
 const agentOptions = {
-  codex: { label: "Codex CLI", status: "ready", avatar: "⌘", tone: "codex", toast: ["Codex CLI 已选择", "本地项目、脚本和渲染任务会走 Codex。"] },
-  deepseek: { label: "DeepSeek API", status: "config needed", avatar: "DS", tone: "deepseek", toast: ["DeepSeek API 已选择", "文案、分章和提示词任务会走 API 配置。"] }
+  codex: {
+    label: "Codex CLI",
+    status: "ready",
+    avatar: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 5.25 5.95 8l-2.7 2.75"/><path d="M7.15 10.75h5.1"/></svg>`,
+    tone: "codex",
+    toast: ["Codex CLI 已选择", "本地项目、脚本和渲染任务会走 Codex。"]
+  },
+  deepseek: {
+    label: "DeepSeek API",
+    status: "config needed",
+    avatar: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 4.2h3.2c2.6 0 4.4 1.55 4.4 3.8s-1.8 3.8-4.4 3.8H4.2z"/><path d="M4.2 4.2v7.6"/><path d="M8.95 6.25c.52-.62 1.2-.92 2.02-.92.82 0 1.48.24 2.02.72"/></svg>`,
+    tone: "deepseek",
+    toast: ["DeepSeek API 已选择", "文案、分章和提示词任务会走 API 配置。"]
+  }
 };
 
 let activeProjectId = "daguchang";
@@ -397,8 +413,125 @@ let chatCollapsed = false;
 let projectCollapsed = false;
 let pendingDeleteProjectId = null;
 
+let projects = loadProjects();
+let projectThreads = loadProjectThreads(projects);
+activeProjectId = resolveInitialActiveProjectId();
+activeTemplate = currentProject()?.template || activeTemplate;
+
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function readJsonStorage(key, fallback) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeProject(project) {
+  if (!project || typeof project !== "object" || !project.id) return null;
+  const template = templates.some((item) => item.id === project.template) ? project.template : "folk";
+  const id = String(project.id);
+  const isDefaultProject = defaultProjects.some((item) => item.id === id);
+  const contentStatus = project.contentStatus === "generated" || isDefaultProject ? "generated" : "empty";
+  const chapterList = Array.isArray(project.chaptersData) ? project.chaptersData.map(normalizeChapter).filter(Boolean) : [];
+  return {
+    id,
+    title: String(project.title || "未命名项目"),
+    type: String(project.type || "短故事"),
+    status: String(project.status || "草稿"),
+    duration: String(project.duration || "0:00"),
+    chapters: String(project.chapters || "0 / 0"),
+    template,
+    contentStatus,
+    chaptersData: contentStatus === "generated" && !isDefaultProject ? chapterList : []
+  };
+}
+
+function normalizeChapter(chapter, index) {
+  if (!chapter || typeof chapter !== "object") return null;
+  const id = String(chapter.id || `ch-${String(index + 1).padStart(2, "0")}`);
+  return {
+    id,
+    title: String(chapter.title || "未命名章节"),
+    time: String(chapter.time || "00:00-00:00"),
+    imageState: String(chapter.imageState || "待生成图片"),
+    voiceState: String(chapter.voiceState || "待生成配音"),
+    musicCue: String(chapter.musicCue || "Low Drone 01"),
+    voice: String(chapter.voice || "腾讯云 · 云希"),
+    text: String(chapter.text || ""),
+    prompt: String(chapter.prompt || ""),
+    thumb: String(chapter.thumb || "field"),
+    state: String(chapter.state || "draft")
+  };
+}
+
+function loadProjects() {
+  const stored = readJsonStorage(PROJECTS_STORAGE_KEY, null);
+  if (!Array.isArray(stored)) return cloneData(defaultProjects);
+  return stored.map(normalizeProject).filter(Boolean);
+}
+
+function normalizeThread(thread, project) {
+  if (!thread || typeof thread !== "object") return createProjectThread(project);
+  const messages = Array.isArray(thread.messages) ? thread.messages : [];
+  return {
+    composeMode: composeModes[thread.composeMode] ? thread.composeMode : "script",
+    draft: String(thread.draft || ""),
+    messages: messages.map((message) => ({
+      role: message.role === "user" ? "user" : "assistant",
+      title: String(message.title || (message.role === "user" ? "你" : "任务")),
+      text: String(message.text || "")
+    }))
+  };
+}
+
+function loadProjectThreads(projectList) {
+  const stored = readJsonStorage(PROJECT_THREADS_STORAGE_KEY, null);
+  const source = stored && typeof stored === "object" ? stored : cloneData(defaultProjectThreads);
+  return projectList.reduce((threads, project) => {
+    threads[project.id] = normalizeThread(source[project.id], project);
+    return threads;
+  }, {});
+}
+
+function resolveInitialActiveProjectId() {
+  const storedId = window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+  if (projects.some((project) => project.id === storedId)) return storedId;
+  return projects[0]?.id || null;
+}
+
+function persistProjectState() {
+  window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+  window.localStorage.setItem(PROJECT_THREADS_STORAGE_KEY, JSON.stringify(projectThreads));
+  if (activeProjectId) {
+    window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, activeProjectId);
+  } else {
+    window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
+  }
+}
+
+function renderWorkspaceState() {
+  syncTopbarControls();
+  renderProjects();
+  restoreCurrentThreadState();
+  renderChapters();
+  updatePreview();
+  renderInspector();
+}
+
 function currentProject() {
-  return projects.find((project) => project.id === activeProjectId) || projects[0];
+  return projects.find((project) => project.id === activeProjectId) || null;
+}
+
+function currentProjectChapters() {
+  const project = currentProject();
+  if (!project) return [];
+  if (defaultProjects.some((item) => item.id === project.id)) return demoChapters;
+  return Array.isArray(project.chaptersData) ? project.chaptersData : [];
 }
 
 function createProjectThread(project) {
@@ -417,15 +550,30 @@ function createProjectThread(project) {
 
 function currentThread() {
   const project = currentProject();
+  if (!project) {
+    return {
+      composeMode: "script",
+      draft: "",
+      messages: [
+        {
+          role: "assistant",
+          title: "当前任务",
+          text: "还没有项目。点击左侧“+ 新建”选择模板后开始创作。"
+        }
+      ]
+    };
+  }
   if (!projectThreads[project.id]) projectThreads[project.id] = createProjectThread(project);
   return projectThreads[project.id];
 }
 
 function saveCurrentThreadState() {
+  if (!currentProject()) return;
   const input = document.querySelector("#prompt-input");
   const thread = currentThread();
   thread.composeMode = activeComposeMode;
   if (input) thread.draft = input.value;
+  persistProjectState();
 }
 
 function restoreCurrentThreadState() {
@@ -443,6 +591,7 @@ function switchProject(projectId, options = {}) {
   saveCurrentThreadState();
   activeProjectId = nextProject.id;
   activeTemplate = nextProject.template;
+  persistProjectState();
   syncTopbarControls();
   renderProjects();
   updatePreview();
@@ -453,6 +602,15 @@ function switchProject(projectId, options = {}) {
 
 function renderProjects() {
   const list = document.querySelector("#project-list");
+  if (!projects.length) {
+    list.innerHTML = `
+      <div class="project-empty-state">
+        <strong>还没有项目</strong>
+        <span>点击“+ 新建”选择模板后开始。</span>
+      </div>
+    `;
+    return;
+  }
   list.innerHTML = projects.map((project) => `
     <article class="project-row ${project.id === activeProjectId ? "active" : ""}" data-project-row="${escapeAttr(project.id)}">
       <button class="project-open" type="button" data-project="${escapeAttr(project.id)}">
@@ -477,10 +635,6 @@ function renderProjects() {
 function openDeleteProjectModal(projectId) {
   const project = projects.find((item) => item.id === projectId);
   if (!project) return;
-  if (projects.length <= 1) {
-    showToast("至少保留一个项目", project.title, "work");
-    return;
-  }
   pendingDeleteProjectId = projectId;
   const modal = document.querySelector("#delete-project-modal");
   const name = document.querySelector("#delete-project-name");
@@ -501,26 +655,20 @@ function confirmDeleteProject() {
     closeDeleteProjectModal();
     return;
   }
-  if (projects.length <= 1) {
-    showToast("至少保留一个项目", projects[index].title, "work");
-    closeDeleteProjectModal();
-    return;
-  }
   const [removed] = projects.splice(index, 1);
   delete projectThreads[removed.id];
   const deletedActiveProject = removed.id === activeProjectId;
   closeDeleteProjectModal();
 
   if (deletedActiveProject) {
-    const nextProject = projects[Math.min(index, projects.length - 1)] || projects[0];
-    activeProjectId = nextProject.id;
-    activeTemplate = nextProject.template;
-    syncTopbarControls();
-    renderProjects();
-    updatePreview();
-    restoreCurrentThreadState();
-    renderInspector();
+    const nextProject = projects[Math.min(index, projects.length - 1)] || null;
+    activeProjectId = nextProject?.id || null;
+    activeTemplate = nextProject?.template || selectedNewTemplate;
+    activeChapterIndex = 0;
+    persistProjectState();
+    renderWorkspaceState();
   } else {
+    persistProjectState();
     renderProjects();
   }
   showToast("项目已删除", removed.title, "work");
@@ -581,7 +729,36 @@ function renderNewProjectPreview() {
 
 function renderChapters() {
   const list = document.querySelector("#chapter-list");
-  list.innerHTML = chapters.map((chapter, index) => `
+  const summary = document.querySelector("#chapter-summary");
+  const project = currentProject();
+  if (!project) {
+    if (summary) summary.textContent = "0 章 · 等待新建项目";
+    list.innerHTML = `
+      <div class="content-empty-state">
+        <strong>暂无章节</strong>
+        <span>新建项目后，分章目录会显示在这里。</span>
+      </div>
+    `;
+    return;
+  }
+  const projectChapters = currentProjectChapters();
+  if (!projectChapters.length) {
+    if (summary) summary.textContent = "0 章 · 等待对话生成";
+    list.innerHTML = `
+      <div class="content-empty-state project-content-empty">
+        <strong>等待对话生成章节</strong>
+        <span>在左侧对话中粘贴故事、文案或参考链接，生成后这里会出现分镜目录、图片状态和配音状态。</span>
+      </div>
+    `;
+    return;
+  }
+  activeChapterIndex = Math.max(0, Math.min(activeChapterIndex, projectChapters.length - 1));
+  if (summary) {
+    const missingImages = projectChapters.filter((chapter) => /缺|待/.test(chapter.imageState)).length;
+    const pendingVoice = projectChapters.filter((chapter) => /待|未/.test(chapter.voiceState)).length;
+    summary.textContent = `${projectChapters.length} 章 · ${missingImages} 张图待处理 · ${pendingVoice} 段配音待生成`;
+  }
+  list.innerHTML = projectChapters.map((chapter, index) => `
     <article class="chapter-card ${index === activeChapterIndex ? "active" : ""} ${chapter.state}">
       <button class="chapter-open" type="button" data-chapter="${index}">
         <div class="chapter-thumb ${chapter.thumb}"><span>${String(index + 1).padStart(2, "0")}</span></div>
@@ -606,15 +783,54 @@ function renderChapters() {
 }
 
 function setActiveChapter(index) {
-  activeChapterIndex = Math.max(0, Math.min(chapters.length - 1, index));
+  const projectChapters = currentProjectChapters();
+  if (!currentProject() || !projectChapters.length) return;
+  activeChapterIndex = Math.max(0, Math.min(projectChapters.length - 1, index));
   renderChapters();
   updatePreview();
   renderInspector();
 }
 
 function updatePreview() {
-  const chapter = chapters[activeChapterIndex];
-  const look = templateLooks[activeTemplate];
+  const project = currentProject();
+  const look = templateLooks[activeTemplate] || templateLooks.folk;
+  if (!project) {
+    document.querySelector("#preview-kicker").textContent = "Loeme Loreframe";
+    document.querySelector("#preview-title").textContent = "新建项目开始";
+    document.querySelector("#preview-subtitle").textContent = "选择模板后，通过项目对话确认文案、分章、图片和配音。";
+    document.querySelector("#subtitle-line").textContent = "左侧点击“+ 新建”，创建第一个短故事或太平广记项目。";
+    document.querySelector("#preview-meta").textContent = "No project";
+    document.querySelector("#player-current-time").textContent = "00:00";
+    document.querySelector("#player-duration").textContent = "00:00";
+    document.querySelector("#preview-progress").style.width = "0%";
+    document.querySelector(".scene-art").style.background = `
+      linear-gradient(180deg, rgba(18, 16, 14, 0.12), rgba(18, 16, 14, 0.96)),
+      ${templateLooks[selectedNewTemplate]?.background || templateLooks.folk.background}
+    `;
+    document.querySelector("#preview-kicker").style.color = templateLooks[selectedNewTemplate]?.accent || templateLooks.folk.accent;
+    document.querySelector("#inspector-title").textContent = "未选择项目";
+    return;
+  }
+  const projectChapters = currentProjectChapters();
+  if (!projectChapters.length) {
+    document.querySelector("#preview-kicker").textContent = `${look.kicker} · Draft`;
+    document.querySelector("#preview-title").textContent = "等待生成内容";
+    document.querySelector("#preview-subtitle").textContent = "通过左侧对话确认故事文案后，再自动分章、生成图片 Prompt 和配音任务。";
+    document.querySelector("#subtitle-line").textContent = "先输入故事梗概、原文、YouTube 参考链接，或直接说“帮我生成一个民间怪谈短视频”。";
+    document.querySelector("#preview-meta").textContent = "No chapters";
+    document.querySelector("#player-current-time").textContent = "00:00";
+    document.querySelector("#player-duration").textContent = "00:00";
+    document.querySelector("#preview-progress").style.width = "0%";
+    document.querySelector(".scene-art").style.background = `
+      linear-gradient(180deg, rgba(18, 16, 14, 0.12), rgba(18, 16, 14, 0.96)),
+      ${look.background}
+    `;
+    document.querySelector("#preview-kicker").style.color = look.accent;
+    document.querySelector("#inspector-title").textContent = "等待生成";
+    return;
+  }
+  activeChapterIndex = Math.max(0, Math.min(activeChapterIndex, projectChapters.length - 1));
+  const chapter = projectChapters[activeChapterIndex];
   document.querySelector("#preview-kicker").textContent = `${look.kicker} · ${chapter.id.toUpperCase()}`;
   document.querySelector("#preview-title").textContent = chapter.title;
   document.querySelector("#preview-subtitle").textContent = chapter.prompt;
@@ -634,7 +850,8 @@ function updatePlayerTimeline(timeRange) {
   const [start = "00:00", end = "00:00"] = timeRange.split("-");
   const startSec = timeToSeconds(start);
   const endSec = Math.max(startSec + 1, timeToSeconds(end));
-  const totalSec = Math.max(...chapters.map((chapter) => timeToSeconds(chapter.time.split("-")[1] || "00:00")), endSec, 1);
+  const projectChapters = currentProjectChapters();
+  const totalSec = Math.max(...projectChapters.map((chapter) => timeToSeconds(chapter.time.split("-")[1] || "00:00")), endSec, 1);
   const progress = Math.max(0.04, Math.min(1, endSec / totalSec));
   document.querySelector("#player-current-time").textContent = start;
   document.querySelector("#player-duration").textContent = end;
@@ -648,7 +865,42 @@ function timeToSeconds(value) {
 }
 
 function renderInspector() {
-  const chapter = chapters[activeChapterIndex];
+  const project = currentProject();
+  if (!project) {
+    document.querySelector("#inspector-title").textContent = "未选择项目";
+    document.querySelector("#inspector-content").innerHTML = `
+      <section class="inspector-block chapter-detail-block">
+        <div class="block-title-row">
+          <div>
+            <div class="section-kicker">项目</div>
+            <strong>等待新建</strong>
+          </div>
+          <span class="status-badge warning">empty</span>
+        </div>
+        <p class="empty-copy">左侧点击“+ 新建”选择模板后，当前章节的图文、图片 Prompt 和配音操作会显示在这里。</p>
+      </section>
+    `;
+    return;
+  }
+  const projectChapters = currentProjectChapters();
+  if (!projectChapters.length) {
+    document.querySelector("#inspector-title").textContent = "等待生成";
+    document.querySelector("#inspector-content").innerHTML = `
+      <section class="inspector-block chapter-detail-block">
+        <div class="block-title-row">
+          <div>
+            <div class="section-kicker">项目内容</div>
+            <strong>还没有章节</strong>
+          </div>
+          <span class="status-badge warning">draft</span>
+        </div>
+        <p class="empty-copy">这个项目还没有通过对话生成文案和分镜。先在左侧输入故事方向或粘贴素材，生成后这里会显示选中章节的图片、Prompt、标题和旁白。</p>
+      </section>
+    `;
+    return;
+  }
+  activeChapterIndex = Math.max(0, Math.min(activeChapterIndex, projectChapters.length - 1));
+  const chapter = projectChapters[activeChapterIndex];
   document.querySelector("#inspector-title").textContent = `${chapter.id.toUpperCase()} · ${chapter.title}`;
   document.querySelector("#inspector-content").innerHTML = `
     <section class="inspector-block chapter-detail-block">
@@ -712,6 +964,10 @@ function setGlobalConfigCollapsed(collapsed) {
   toggle.setAttribute("aria-expanded", String(!collapsed));
   toggle.title = collapsed ? "展开全片声音与音乐" : "收起全片声音与音乐";
   if (caret) caret.textContent = collapsed ? "⌄" : "⌃";
+  if (!collapsed) {
+    setAudioPanelCollapsed(false);
+    setMusicPanelCollapsed(false);
+  }
 }
 
 function setMusicPanelCollapsed(collapsed) {
@@ -729,18 +985,18 @@ function setMusicPanelCollapsed(collapsed) {
 
 function setChapterPanelCollapsed(collapsed) {
   chapterPanelCollapsed = collapsed;
-  const production = document.querySelector(".production-pane");
+  const workspace = document.querySelector(".workspace");
   const panel = document.querySelector(".chapters-panel");
   const list = document.querySelector("#chapter-list");
   const toggle = document.querySelector("#chapter-panel-toggle");
   const caret = document.querySelector("#chapter-panel-caret");
-  if (!production || !panel || !list || !toggle) return;
-  production.classList.toggle("chapters-collapsed", collapsed);
+  if (!workspace || !panel || !list || !toggle) return;
+  workspace.classList.toggle("chapters-collapsed", collapsed);
   panel.classList.toggle("is-collapsed", collapsed);
   list.hidden = collapsed;
   toggle.setAttribute("aria-expanded", String(!collapsed));
   toggle.title = collapsed ? "展开章节目录" : "收起章节目录";
-  if (caret) caret.textContent = collapsed ? "⌄" : "⌃";
+  if (caret) caret.textContent = collapsed ? "‹" : "›";
 }
 
 function syncTopbarControls() {
@@ -759,7 +1015,7 @@ function syncAgentTrigger() {
   if (label) label.textContent = option.label;
   if (avatar) {
     avatar.className = "agent-avatar " + option.tone;
-    avatar.textContent = option.avatar;
+    avatar.innerHTML = option.avatar;
   }
   if (dot) {
     dot.className = "agent-dot " + (option.status === "ready" ? "ready" : "muted");
@@ -795,7 +1051,7 @@ function selectAgent(agentId) {
 }
 
 function openNewProjectModal(templateId = activeTemplate) {
-  selectedNewTemplate = templateId;
+  selectedNewTemplate = templates.some((item) => item.id === templateId) ? templateId : "folk";
   const modal = document.querySelector("#new-project-modal");
   const name = document.querySelector("#new-project-name");
   if (name) name.value = "未命名短故事";
@@ -901,14 +1157,23 @@ function setComposeMode(mode, options = {}) {
   const scope = document.querySelector("#chat-scope-label");
   const status = document.querySelector("#composer-status");
   if (input) input.placeholder = config.placeholder;
-  if (scope) scope.textContent = "项目对话：" + currentProject().title + " · 当前作用域：" + config.label;
+  const project = currentProject();
+  if (scope) scope.textContent = project ? "项目对话：" + project.title + " · 当前作用域：" + config.label : "还没有项目 · 先新建项目";
   if (status) status.textContent = config.label + " · Cmd / Ctrl + Enter";
+  if (project) persistProjectState();
   if (!options.silent) showToast("指令作用域已切换", config.label, "work");
 }
 
 function submitPrompt() {
   const input = document.querySelector("#prompt-input");
   if (!input) return;
+  const project = currentProject();
+  if (!project) {
+    const status = document.querySelector("#composer-status");
+    if (status) status.textContent = "请先新建项目";
+    showToast("请先新建项目", "项目对话会跟随项目保存", "work");
+    return;
+  }
   const value = input.value.trim();
   const config = composeModes[activeComposeMode] || composeModes.script;
   const status = document.querySelector("#composer-status");
@@ -918,9 +1183,10 @@ function submitPrompt() {
   }
   const thread = currentThread();
   thread.messages.push({ role: "user", title: "你", text: value });
-  thread.messages.push({ role: "assistant", title: config.queued, text: "已按“" + config.label + "”作用域加入《" + currentProject().title + "》的任务队列。" });
+  thread.messages.push({ role: "assistant", title: config.queued, text: "已按“" + config.label + "”作用域加入《" + project.title + "》的任务队列。" });
   thread.draft = "";
   thread.composeMode = activeComposeMode;
+  persistProjectState();
   renderConversation();
   showToast(config.queued, value.slice(0, 42), "work");
   window.setTimeout(() => {
@@ -981,15 +1247,13 @@ function bindEvents() {
     const name = document.querySelector("#new-project-name").value.trim() || "未命名项目";
     const type = document.querySelector("#new-project-type").value;
     const id = "project-" + Date.now();
-    projects.unshift({ id, title: name, type, status: "草稿", duration: "0:00", chapters: "0 / 0", template: selectedNewTemplate });
+    projects.unshift({ id, title: name, type, status: "草稿", duration: "0:00", chapters: "0 / 0", template: selectedNewTemplate, contentStatus: "empty", chaptersData: [] });
     projectThreads[id] = createProjectThread({ id, title: name });
     activeProjectId = id;
     activeTemplate = selectedNewTemplate;
-    syncTopbarControls();
-    renderProjects();
-    updatePreview();
-    restoreCurrentThreadState();
-    renderInspector();
+    activeChapterIndex = 0;
+    persistProjectState();
+    renderWorkspaceState();
     newProjectModal.hidden = true;
     const template = templates.find((item) => item.id === selectedNewTemplate) || templates[0];
     showToast("项目已创建", template.title, "ok");
@@ -1015,18 +1279,28 @@ function bindEvents() {
   });
 
   document.querySelector("#preview-play").addEventListener("click", () => {
+    const projectChapters = currentProjectChapters();
+    if (!currentProject() || !projectChapters.length) {
+      showToast("暂无可播放内容", "先通过对话生成文案、分章和图片", "work");
+      return;
+    }
     const badge = document.querySelector("#preview-status");
     badge.className = "status-badge warning";
     badge.textContent = "playing";
     document.querySelector(".playback-actions").classList.add("is-playing");
-    showToast("开始播放", chapters[activeChapterIndex].title, "ok");
+    showToast("开始播放", projectChapters[activeChapterIndex].title, "ok");
   });
   document.querySelector("#preview-pause").addEventListener("click", () => {
+    const projectChapters = currentProjectChapters();
+    if (!currentProject() || !projectChapters.length) {
+      showToast("暂无可暂停内容", "先通过对话生成章节", "work");
+      return;
+    }
     const badge = document.querySelector("#preview-status");
     badge.className = "status-badge ready";
     badge.textContent = "paused";
     document.querySelector(".playback-actions").classList.remove("is-playing");
-    showToast("已暂停", chapters[activeChapterIndex].title, "work");
+    showToast("已暂停", projectChapters[activeChapterIndex].title, "work");
   });
   document.querySelector("#render-btn").addEventListener("click", () => {
     const badge = document.querySelector("#preview-status");
@@ -1043,7 +1317,9 @@ function bindEvents() {
 
   document.querySelector("#send-prompt").addEventListener("click", submitPrompt);
   document.querySelector("#prompt-input").addEventListener("input", (event) => {
+    if (!currentProject()) return;
     currentThread().draft = event.target.value;
+    persistProjectState();
   });
   document.querySelector("#prompt-input").addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {

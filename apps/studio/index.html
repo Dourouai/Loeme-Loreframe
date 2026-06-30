@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Loeme Loreframe · Studio</title>
-  <link rel="stylesheet" href="./styles.css?v=20260629-sound-card-collapse" />
+  <link rel="stylesheet" href="./styles.css?v=20260630-side-collapse-config" />
 </head>
 <body>
   <div class="app-shell">
@@ -28,16 +28,16 @@
         <span>Agent</span>
         <button class="agent-trigger" id="agent-trigger" type="button" aria-expanded="false" aria-haspopup="menu">
           <i class="agent-dot ready"></i>
-          <b class="agent-avatar codex">⌘</b>
+          <b class="agent-avatar codex"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 5.25 5.95 8l-2.7 2.75"/><path d="M7.15 10.75h5.1"/></svg></b>
           <strong id="agent-current-label">Codex CLI</strong>
           <em>⌄</em>
         </button>
         <div class="agent-menu" id="agent-menu" role="menu" hidden>
           <button class="agent-option" type="button" data-agent="deepseek">
-            <i class="agent-dot muted"></i><b class="agent-avatar deepseek">DS</b><span>DeepSeek API</span><small>config needed</small>
+            <i class="agent-dot muted"></i><b class="agent-avatar deepseek"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 4.2h3.2c2.6 0 4.4 1.55 4.4 3.8s-1.8 3.8-4.4 3.8H4.2z"/><path d="M4.2 4.2v7.6"/><path d="M8.95 6.25c.52-.62 1.2-.92 2.02-.92.82 0 1.48.24 2.02.72"/></svg></b><span>DeepSeek API</span><small>config needed</small>
           </button>
           <button class="agent-option active" type="button" data-agent="codex">
-            <i class="agent-dot ready"></i><b class="agent-avatar codex">⌘</b><span>Codex CLI</span><small>ready</small>
+            <i class="agent-dot ready"></i><b class="agent-avatar codex"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.25 5.25 5.95 8l-2.7 2.75"/><path d="M7.15 10.75h5.1"/></svg></b><span>Codex CLI</span><small>ready</small>
           </button>
         </div>
       </div>
@@ -153,7 +153,7 @@
                   <label class="field"><span>Emotion</span><select><option>story</option><option>suspense</option><option>calm</option></select></label>
                   <div class="field range-field"><span>Narration volume</span><div><small>voice</small><input type="range" min="-12" max="6" value="0" /><small>0 dB</small></div></div>
                 </div>
-                <p class="audio-note">Audio 只管理旁白生成；章节卡片只展示配音状态，选中章节后通过对话或右侧详情触发本章配音。</p>
+                <p class="audio-note">Audio 只管理旁白生成；章节卡片只展示配音状态，选中章节后通过对话或中间当前内容详情触发本章配音。</p>
               </div>
             </section>
 
@@ -176,6 +176,16 @@
           </div>
         </section>
 
+        <section class="detail-panel" aria-label="Current chapter">
+          <div class="inspector-head">
+            <span>当前内容</span>
+            <strong id="inspector-title">CH-02 · 草垛后的笑声</strong>
+          </div>
+          <div class="inspector-content" id="inspector-content"></div>
+        </section>
+      </section>
+
+      <aside class="chapter-nav-pane" aria-label="Chapters">
         <section class="chapters-panel" aria-label="Chapters">
           <div class="panel-head compact">
             <div>
@@ -183,19 +193,11 @@
               <span id="chapter-summary">4 章 · 1 张图缺失 · 2 段配音待生成</span>
             </div>
             <button class="panel-collapse-action" id="chapter-panel-toggle" type="button" aria-expanded="true" title="收起章节目录">
-              <span id="chapter-panel-caret">⌃</span>
+              <span id="chapter-panel-caret">›</span>
             </button>
           </div>
           <div class="chapter-list" id="chapter-list"></div>
         </section>
-      </section>
-
-      <aside class="inspector-pane" aria-label="Current chapter">
-        <div class="inspector-head">
-          <span>当前选中</span>
-          <strong id="inspector-title">CH-02 · 草垛后的笑声</strong>
-        </div>
-        <div class="inspector-content" id="inspector-content"></div>
       </aside>
     </main>
 
@@ -278,6 +280,6 @@
     </section>
   </div>
 
-  <script src="./app.js?v=20260629-sound-card-collapse"></script>
+  <script src="./app.js?v=20260630-side-collapse-config"></script>
 </body>
 </html>

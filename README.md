@@ -15,6 +15,16 @@ The first milestone is intentionally small: render a story video from human-revi
 
 Naming note: the public project name is **Loeme Loreframe**. The current local workspace and package names may still use `story-video-factory` / `@story-video/*` until the open-source repo and package scope are finalized.
 
+## Development Status
+
+Loeme Loreframe is under active development. The Studio UI, project workflow, template selection, agent/provider settings, global audio/music configuration, and chapter navigation are being shaped in public, but the product is **not yet functionally closed-loop**.
+
+Current caveats:
+
+- Chat-driven script generation, chapter splitting, image generation, Tencent Cloud TTS, music selection, preview, and MP4 export are still being wired together.
+- Some Studio interactions are prototype/stateful UI behavior rather than completed backend actions.
+- The open-source framework, extension boundaries, and template system are intentionally visible early so the workflow can be refined before the first fully usable release.
+
 ## Reference
 
 Loeme Loreframe references the Studio interaction and open-source product structure from Open Design's [`html-video`](https://github.com/nexu-io/html-video): a dense local workbench, template-aware creation, provider settings, agent integration, and render/export flow.
