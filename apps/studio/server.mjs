@@ -82,6 +82,7 @@ function buildStudioPrompt(input) {
   const context = input.context || {};
   const project = context.project || {};
   const template = context.template || {};
+  const imageSize = template.imageSize || {};
   const chapter = context.activeChapter || null;
   const chapters = Array.isArray(context.chapters) ? context.chapters : [];
   const messages = Array.isArray(context.recentMessages) ? context.recentMessages : [];
@@ -117,10 +118,12 @@ function buildStudioPrompt(input) {
 ]
 \`\`\`
 章节数组应覆盖本次要展示在分镜目录里的所有章节。
+如果用户要求生成图片或图片 Prompt，必须使用当前模板的画布尺寸和比例；如果没有真实图片生成 provider，只输出可用于外部工具的最终 Prompt，不要声称图片文件已经生成。最终 Prompt 尽量放在非 JSON 代码块中，便于 Studio 写回当前章节。
 
 当前上下文：
 - 项目：${project.title || "未命名项目"}（${project.type || "未设置类型"}，状态：${project.status || "未知"}）
 - 当前模板：${template.title || "未选择"}（${template.canvas || "未知画布"}，${template.subtitle || "无描述"}）
+- 当前图片尺寸：${imageSize.label || template.canvas || "未知"}
 - 当前作用域：${context.composeLabel || context.composeMode || "文案"}
 - 当前章节：${chapter ? `${chapter.id || ""} ${chapter.title || ""} ${chapter.time || ""}` : "暂无章节"}
 - 全片声音：${context.audio?.voice || "未设置"}

@@ -125,6 +125,21 @@ const templates = [
   }
 ];
 
+function templateCanvasSpec(templateId = activeTemplate) {
+  const template = templates.find((item) => item.id === templateId) || templates[0];
+  const resolution = template.canvas.match(/\d+\s*×\s*\d+/)?.[0]?.replace(/\s/g, "") || "1080×1920";
+  const aspectRatio = template.canvas.match(/\d+\s*:\s*\d+/)?.[0]?.replace(/\s/g, "") || "9:16";
+  const [width, height] = resolution.split("×").map((value) => Number(value) || 0);
+  return {
+    resolution,
+    aspectRatio,
+    width,
+    height,
+    label: `${resolution} · ${aspectRatio}`,
+    templateTitle: template.title
+  };
+}
+
 const templateLooks = {
   folk: {
     kicker: "民间怪谈",
@@ -413,6 +428,11 @@ let chatCollapsed = false;
 let projectCollapsed = false;
 let pendingDeleteProjectId = null;
 let chatRequestInFlight = false;
+let previewTimeSec = 0;
+let previewPlaying = false;
+let previewTimerId = null;
+let previewScrubbing = false;
+let previewStatusText = "ready";
 
 let projects = loadProjects();
 let projectThreads = loadProjectThreads(projects);
@@ -493,9 +513,98 @@ function generatedThumb(index) {
   return ["field", "straw", "kids", "morning"][index % 4];
 }
 
+function hashString(value = "") {
+  let hash = 0;
+  const text = String(value);
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function chapterVisualBackground(chapter, look = templateLooks[activeTemplate] || templateLooks.folk) {
+  const text = `${chapter?.title || ""} ${chapter?.text || ""} ${chapter?.prompt || ""}`.toLowerCase();
+  const seed = hashString(text);
+  const lightX = 18 + (seed % 65);
+  const lightY = 12 + ((seed >> 5) % 34);
+  const base = chapterVisualPalette(text, look);
+  const motif = chapterVisualMotif(text, seed);
+  const atmosphere = /雨|rain|storm|湿|mud|泥|水/.test(text)
+    ? "repeating-linear-gradient(104deg, rgba(255,255,255,0.07) 0 1px, transparent 1px 9px)"
+    : /纸|paper|lantern|灯笼|符|香|烛/.test(text)
+      ? "repeating-linear-gradient(0deg, rgba(245,222,176,0.055) 0 2px, transparent 2px 20px)"
+      : "radial-gradient(ellipse at 35% 48%, rgba(255,255,255,0.035), transparent 32%)";
+  return [
+    "linear-gradient(180deg, rgba(18,16,14,0.1), rgba(18,16,14,0.94))",
+    atmosphere,
+    motif,
+    `radial-gradient(circle at ${lightX}% ${lightY}%, rgba(236,207,140,0.42), transparent 15%)`,
+    `linear-gradient(155deg, ${base.top} 0%, ${base.mid} 55%, ${base.bottom} 100%)`
+  ].join(", ");
+}
+
+function chapterVisualPalette(text, look) {
+  if (/雨|rain|湿|泥|水|河|井/.test(text)) return { top: "#273037", mid: "#15191a", bottom: "#060707" };
+  if (/灯|lamp|lantern|烛|火|oil/.test(text)) return { top: "#3b2d1c", mid: "#1a1510", bottom: "#060504" };
+  if (/纸|paper|白|丧|灵|grave|坟/.test(text)) return { top: "#2e2b25", mid: "#171512", bottom: "#060605" };
+  if (/树|forest|林|槐|柳|wood|木/.test(text)) return { top: "#273024", mid: "#121711", bottom: "#050605" };
+  if (/庙|temple|神|祠|院|门/.test(text)) return { top: "#32261b", mid: "#17100b", bottom: "#050403" };
+  return {
+    top: look?.background?.match(/#[0-9a-f]{6}/i)?.[0] || "#2b2722",
+    mid: "#151412",
+    bottom: "#060606"
+  };
+}
+
+function chapterVisualMotif(text, seed) {
+  const x = 26 + (seed % 46);
+  if (/木匣|box|匣|柜|桌|counter/.test(text)) {
+    return [
+      `linear-gradient(90deg, transparent 0 ${Math.max(22, x - 18)}%, rgba(70,42,22,0.72) ${Math.max(24, x - 16)}% ${Math.min(82, x + 18)}%, transparent ${Math.min(84, x + 20)}% 100%)`,
+      "linear-gradient(0deg, transparent 0 58%, rgba(10,7,5,0.52) 59% 74%, transparent 75% 100%)"
+    ].join(", ");
+  }
+  if (/女|girl|woman|孩子|child|人影|figure|影/.test(text)) {
+    return `radial-gradient(ellipse at ${x}% 72%, rgba(0,0,0,0.72) 0 7%, transparent 8%)`;
+  }
+  if (/门|door|院|屋|room|house/.test(text)) {
+    return `linear-gradient(90deg, transparent 0 ${x - 7}%, rgba(0,0,0,0.58) ${x - 6}% ${x + 8}%, transparent ${x + 9}% 100%)`;
+  }
+  if (/树|tree|forest|林|槐|柳/.test(text)) {
+    return [
+      `linear-gradient(90deg, transparent 0 ${x - 2}%, rgba(0,0,0,0.58) ${x - 1}% ${x + 2}%, transparent ${x + 3}% 100%)`,
+      `radial-gradient(ellipse at ${x}% 56%, rgba(0,0,0,0.5) 0 10%, transparent 11%)`
+    ].join(", ");
+  }
+  if (/纸|paper|灯笼|lantern/.test(text)) {
+    return "linear-gradient(90deg, transparent 0 18%, rgba(231,211,167,0.09) 19% 28%, transparent 29% 44%, rgba(231,211,167,0.08) 45% 54%, transparent 55% 100%)";
+  }
+  return `radial-gradient(ellipse at ${x}% 70%, rgba(0,0,0,0.45) 0 12%, transparent 13%)`;
+}
+
+function chapterVisualStyleAttr(chapter) {
+  return `style="${escapeAttr(`background: ${chapterVisualBackground(chapter)};`)}"`;
+}
+
+function chapterVisualLabel(chapter) {
+  const text = `${chapter?.title || ""} ${chapter?.text || ""} ${chapter?.prompt || ""}`.toLowerCase();
+  const labels = [];
+  if (/木匣|box|匣/.test(text)) labels.push("木匣");
+  if (/灯|lamp|lantern|烛|oil/.test(text)) labels.push("灯火");
+  if (/雨|rain|湿|泥|水/.test(text)) labels.push("雨夜");
+  if (/纸|paper|灯笼|符|香/.test(text)) labels.push("纸铺");
+  if (/女|girl|woman/.test(text)) labels.push("女子");
+  if (/孩子|child/.test(text)) labels.push("孩子");
+  if (/树|tree|forest|林|槐|柳/.test(text)) labels.push("树影");
+  if (/庙|temple|神|祠/.test(text)) labels.push("古庙");
+  if (/门|door|屋|room|house/.test(text)) labels.push("门屋");
+  return labels.slice(0, 3).join(" · ") || "Prompt 预览";
+}
+
 function secondsToTime(totalSeconds) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
+  const normalizedSeconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const minutes = Math.floor(normalizedSeconds / 60);
+  const seconds = normalizedSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
@@ -659,6 +768,27 @@ function currentProjectChapters() {
   return [];
 }
 
+function ensureEditableProjectChapters() {
+  const project = currentProject();
+  if (!project) return [];
+  if (!Array.isArray(project.chaptersData) || !project.chaptersData.length) {
+    const source = defaultProjects.some((item) => item.id === project.id) ? demoChapters : currentProjectChapters();
+    project.chaptersData = source.map((chapter, index) => normalizeChapter(cloneData(chapter), index)).filter(Boolean);
+    if (project.chaptersData.length) {
+      project.contentStatus = "generated";
+      project.chapters = `${project.chaptersData.length} / ${project.chaptersData.length}`;
+    }
+  }
+  return project.chaptersData || [];
+}
+
+function selectedEditableChapter() {
+  const chapters = ensureEditableProjectChapters();
+  if (!chapters.length) return null;
+  activeChapterIndex = Math.max(0, Math.min(activeChapterIndex, chapters.length - 1));
+  return chapters[activeChapterIndex];
+}
+
 function createProjectThread(project) {
   return {
     composeMode: "script",
@@ -716,6 +846,8 @@ function switchProject(projectId, options = {}) {
   saveCurrentThreadState();
   activeProjectId = nextProject.id;
   activeTemplate = nextProject.template;
+  activeChapterIndex = 0;
+  resetPreviewPlayback();
   persistProjectState();
   syncTopbarControls();
   renderProjects();
@@ -790,6 +922,7 @@ function confirmDeleteProject() {
     activeProjectId = nextProject?.id || null;
     activeTemplate = nextProject?.template || selectedNewTemplate;
     activeChapterIndex = 0;
+    resetPreviewPlayback();
     persistProjectState();
     renderWorkspaceState();
   } else {
@@ -806,10 +939,15 @@ function renderConversation() {
   list.innerHTML = messages.map((message) => `
     <article class="chat-message ${escapeAttr(message.role)}">
       <strong class="chat-message-title">${escapeHtml(message.title)}</strong>
-      <div class="chat-message-body">${renderMarkdown(message.text)}</div>
+      <div class="chat-message-body">${renderMarkdown(displayMessageText(message))}</div>
     </article>
   `).join("");
   list.scrollTop = list.scrollHeight;
+}
+
+function displayMessageText(message) {
+  if (!message || message.role !== "assistant") return message?.text || "";
+  return String(message.text || "").replace(/\n{4,}/g, "\n\n\n").trim();
 }
 
 function renderNewProjectTemplates() {
@@ -886,7 +1024,7 @@ function renderChapters() {
   list.innerHTML = projectChapters.map((chapter, index) => `
     <article class="chapter-card ${index === activeChapterIndex ? "active" : ""} ${chapter.state}">
       <button class="chapter-open" type="button" data-chapter="${index}">
-        <div class="chapter-thumb ${chapter.thumb}"><span>${String(index + 1).padStart(2, "0")}</span></div>
+        <div class="chapter-thumb ${chapter.thumb}" ${chapterVisualStyleAttr(chapter)}><span>${String(index + 1).padStart(2, "0")}</span></div>
         <div class="chapter-copy">
           <div class="chapter-title-row">
             <strong>${chapter.title}</strong>
@@ -907,27 +1045,31 @@ function renderChapters() {
   });
 }
 
-function setActiveChapter(index) {
+function setActiveChapter(index, options = {}) {
   const projectChapters = currentProjectChapters();
   if (!currentProject() || !projectChapters.length) return;
   activeChapterIndex = Math.max(0, Math.min(projectChapters.length - 1, index));
+  if (!options.preserveTime) {
+    previewTimeSec = chapterStartSec(projectChapters[activeChapterIndex]);
+    previewStatusText = previewPlaying ? previewStatusText : "paused";
+  }
   renderChapters();
-  updatePreview();
+  updatePreview({ preserveTime: true });
   renderInspector();
+  syncPreviewTimeline();
 }
 
-function updatePreview() {
+function updatePreview(options = {}) {
   const project = currentProject();
   const look = templateLooks[activeTemplate] || templateLooks.folk;
+  applyCanvasRatio(activeTemplate);
   if (!project) {
     document.querySelector("#preview-kicker").textContent = "Loeme Loreframe";
     document.querySelector("#preview-title").textContent = "新建项目开始";
     document.querySelector("#preview-subtitle").textContent = "选择模板后，通过项目对话确认文案、分章、图片和配音。";
     document.querySelector("#subtitle-line").textContent = "左侧点击“+ 新建”，创建第一个短故事或太平广记项目。";
     document.querySelector("#preview-meta").textContent = "No project";
-    document.querySelector("#player-current-time").textContent = "00:00";
-    document.querySelector("#player-duration").textContent = "00:00";
-    document.querySelector("#preview-progress").style.width = "0%";
+    resetPreviewPlayback();
     document.querySelector(".scene-art").style.background = `
       linear-gradient(180deg, rgba(18, 16, 14, 0.12), rgba(18, 16, 14, 0.96)),
       ${templateLooks[selectedNewTemplate]?.background || templateLooks.folk.background}
@@ -943,9 +1085,7 @@ function updatePreview() {
     document.querySelector("#preview-subtitle").textContent = "通过左侧对话确认故事文案后，再自动分章、生成图片 Prompt 和配音任务。";
     document.querySelector("#subtitle-line").textContent = "先输入故事梗概、原文、YouTube 参考链接，或直接说“帮我生成一个民间怪谈短视频”。";
     document.querySelector("#preview-meta").textContent = "No chapters";
-    document.querySelector("#player-current-time").textContent = "00:00";
-    document.querySelector("#player-duration").textContent = "00:00";
-    document.querySelector("#preview-progress").style.width = "0%";
+    resetPreviewPlayback();
     document.querySelector(".scene-art").style.background = `
       linear-gradient(180deg, rgba(18, 16, 14, 0.12), rgba(18, 16, 14, 0.96)),
       ${look.background}
@@ -956,37 +1096,275 @@ function updatePreview() {
   }
   activeChapterIndex = Math.max(0, Math.min(activeChapterIndex, projectChapters.length - 1));
   const chapter = projectChapters[activeChapterIndex];
+  const chapterStart = chapterStartSec(chapter);
+  const chapterEnd = chapterEndSec(chapter);
+  if (!options.preserveTime && (previewTimeSec < chapterStart || previewTimeSec > chapterEnd)) {
+    previewTimeSec = chapterStart;
+  }
   document.querySelector("#preview-kicker").textContent = `${look.kicker} · ${chapter.id.toUpperCase()}`;
   document.querySelector("#preview-title").textContent = chapter.title;
   document.querySelector("#preview-subtitle").textContent = chapter.prompt;
   document.querySelector("#subtitle-line").textContent = chapter.text;
   document.querySelector("#preview-meta").textContent = `${chapter.id.toUpperCase()} · ${chapter.time}`;
-  updatePlayerTimeline(chapter.time);
-  document.querySelector(".scene-art").style.background = `
-    linear-gradient(180deg, rgba(18, 16, 14, 0.12), rgba(18, 16, 14, 0.96)),
-    radial-gradient(circle at 66% 16%, rgba(255, 229, 179, 0.22), transparent 18%),
-    ${look.background}
-  `;
+  syncPreviewTimeline();
+  syncPreviewPlaybackUi();
+  document.querySelector(".scene-art").style.background = chapterVisualBackground(chapter, look);
   document.querySelector("#preview-kicker").style.color = look.accent;
   document.querySelector("#inspector-title").textContent = `${chapter.id.toUpperCase()} · ${chapter.title}`;
 }
 
-function updatePlayerTimeline(timeRange) {
-  const [start = "00:00", end = "00:00"] = timeRange.split("-");
-  const startSec = timeToSeconds(start);
-  const endSec = Math.max(startSec + 1, timeToSeconds(end));
+function applyCanvasRatio(templateId = activeTemplate) {
+  const canvas = templateCanvasSpec(templateId);
+  const isLandscape = canvas.width > canvas.height;
+  const frame = document.querySelector(".video-frame");
+  const panel = document.querySelector(".preview-panel");
+  if (frame) {
+    frame.style.setProperty("--canvas-aspect", `${canvas.width || 9} / ${canvas.height || 16}`);
+    frame.classList.toggle("canvas-landscape", isLandscape);
+    frame.classList.toggle("canvas-portrait", !isLandscape);
+  }
+  if (panel) {
+    panel.classList.toggle("canvas-landscape", isLandscape);
+    panel.classList.toggle("canvas-portrait", !isLandscape);
+  }
+}
+
+function chapterTimeParts(chapter) {
+  const [start = "00:00", end = "00:00"] = String(chapter?.time || "").split("-");
+  return { start, end };
+}
+
+function chapterStartSec(chapter) {
+  return timeToSeconds(chapterTimeParts(chapter).start || "00:00");
+}
+
+function chapterEndSec(chapter) {
+  const start = chapterStartSec(chapter);
+  const end = timeToSeconds(chapterTimeParts(chapter).end || "00:00");
+  return Math.max(start + 1, end);
+}
+
+function currentProjectDurationSec() {
   const projectChapters = currentProjectChapters();
-  const totalSec = Math.max(...projectChapters.map((chapter) => timeToSeconds(chapter.time.split("-")[1] || "00:00")), endSec, 1);
-  const progress = Math.max(0.04, Math.min(1, endSec / totalSec));
-  document.querySelector("#player-current-time").textContent = start;
-  document.querySelector("#player-duration").textContent = end;
-  document.querySelector("#preview-progress").style.width = Math.round(progress * 100) + "%";
+  if (!projectChapters.length) return 0;
+  return Math.max(...projectChapters.map(chapterEndSec), 0);
+}
+
+function clampPreviewTime(seconds) {
+  const totalSec = currentProjectDurationSec();
+  if (!totalSec) return 0;
+  return Math.max(0, Math.min(Number(seconds) || 0, totalSec));
+}
+
+function chapterIndexAtTime(seconds) {
+  const projectChapters = currentProjectChapters();
+  if (!projectChapters.length) return -1;
+  const time = clampPreviewTime(seconds);
+  const index = projectChapters.findIndex((chapter) => time >= chapterStartSec(chapter) && time < chapterEndSec(chapter));
+  if (index >= 0) return index;
+  return time >= chapterEndSec(projectChapters[projectChapters.length - 1]) ? projectChapters.length - 1 : 0;
+}
+
+function setPreviewTime(seconds, options = {}) {
+  const projectChapters = currentProjectChapters();
+  if (!currentProject() || !projectChapters.length) {
+    resetPreviewPlayback();
+    return;
+  }
+  previewTimeSec = clampPreviewTime(seconds);
+  const nextIndex = chapterIndexAtTime(previewTimeSec);
+  if (nextIndex >= 0 && nextIndex !== activeChapterIndex) {
+    setActiveChapter(nextIndex, { preserveTime: true });
+    return;
+  }
+  if (!options.skipUi) syncPreviewTimeline();
+}
+
+function startPreviewPlayback() {
+  const projectChapters = currentProjectChapters();
+  if (!currentProject() || !projectChapters.length) {
+    showToast("暂无可播放内容", "先通过对话生成文案、分章和图片", "work");
+    return;
+  }
+  const totalSec = currentProjectDurationSec();
+  if (!totalSec) {
+    showToast("暂无可播放内容", "当前项目还没有有效时间线", "work");
+    return;
+  }
+  if (previewTimeSec <= 0 || previewTimeSec >= totalSec) {
+    previewTimeSec = chapterStartSec(projectChapters[activeChapterIndex] || projectChapters[0]);
+  }
+  stopPreviewTimer();
+  previewPlaying = true;
+  syncPreviewPlaybackUi("ready");
+  syncPreviewTimeline();
+  previewTimerId = window.setInterval(() => {
+    const total = currentProjectDurationSec();
+    const nextTime = previewTimeSec + 0.25;
+    if (!total || nextTime >= total) {
+      setPreviewTime(total || 0);
+      pausePreviewPlayback({ status: "ready", silent: true });
+      showToast("预览结束", "已到达视频末尾", "ok");
+      return;
+    }
+    setPreviewTime(nextTime);
+  }, 250);
+  showToast("开始播放", projectChapters[activeChapterIndex].title, "ok");
+}
+
+function pausePreviewPlayback(options = {}) {
+  const projectChapters = currentProjectChapters();
+  if (!options.silent && (!currentProject() || !projectChapters.length)) {
+    showToast("暂无可暂停内容", "先通过对话生成章节", "work");
+    return;
+  }
+  stopPreviewTimer();
+  previewPlaying = false;
+  syncPreviewPlaybackUi(options.status || "paused");
+  syncPreviewTimeline();
+  if (!options.silent && projectChapters.length) {
+    showToast("已暂停", projectChapters[activeChapterIndex]?.title || "当前章节", "work");
+  }
+}
+
+function resetPreviewPlayback() {
+  stopPreviewTimer();
+  previewPlaying = false;
+  previewTimeSec = 0;
+  syncPreviewPlaybackUi("ready");
+  syncPreviewTimeline();
+}
+
+function stopPreviewTimer() {
+  if (previewTimerId) {
+    window.clearInterval(previewTimerId);
+    previewTimerId = null;
+  }
+}
+
+function syncPreviewPlaybackUi(statusText) {
+  if (statusText) previewStatusText = statusText;
+  const badge = document.querySelector("#preview-status");
+  if (badge) {
+    badge.className = previewPlaying ? "status-badge warning" : "status-badge ready";
+    badge.textContent = previewPlaying ? "playing" : previewStatusText;
+  }
+  const actions = document.querySelector(".playback-actions");
+  if (actions) actions.classList.toggle("is-playing", previewPlaying);
+}
+
+function syncPreviewTimeline() {
+  const totalSec = currentProjectDurationSec();
+  previewTimeSec = clampPreviewTime(previewTimeSec);
+  const progress = totalSec ? Math.max(0, Math.min(1, previewTimeSec / totalSec)) : 0;
+  const currentNode = document.querySelector("#player-current-time");
+  const durationNode = document.querySelector("#player-duration");
+  const progressNode = document.querySelector("#preview-progress");
+  const trackNode = document.querySelector("#player-track");
+  if (currentNode) currentNode.textContent = secondsToTime(previewTimeSec);
+  if (durationNode) durationNode.textContent = secondsToTime(totalSec);
+  if (progressNode) progressNode.style.width = `${Math.round(progress * 1000) / 10}%`;
+  if (trackNode) {
+    trackNode.setAttribute("aria-valuemax", String(Math.floor(totalSec)));
+    trackNode.setAttribute("aria-valuenow", String(Math.floor(previewTimeSec)));
+    trackNode.setAttribute("aria-valuetext", `${secondsToTime(previewTimeSec)} / ${secondsToTime(totalSec)}`);
+  }
+}
+
+function seekPreviewFromPointer(event) {
+  const track = document.querySelector("#player-track");
+  const totalSec = currentProjectDurationSec();
+  if (!track || !totalSec) return;
+  const rect = track.getBoundingClientRect();
+  const ratio = rect.width ? (event.clientX - rect.left) / rect.width : 0;
+  setPreviewTime(Math.max(0, Math.min(1, ratio)) * totalSec);
+  if (!previewPlaying) syncPreviewPlaybackUi("paused");
+}
+
+function seekPreviewByStep(stepSeconds) {
+  const totalSec = currentProjectDurationSec();
+  if (!totalSec) return;
+  setPreviewTime(previewTimeSec + stepSeconds);
+  if (!previewPlaying) syncPreviewPlaybackUi("paused");
 }
 
 function timeToSeconds(value) {
   const parts = value.split(":").map((part) => Number(part) || 0);
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
   return parts[0] * 60 + parts[1];
+}
+
+function buildInspectorAgentInstruction(action, chapter) {
+  const project = currentProject();
+  const template = templates.find((item) => item.id === activeTemplate) || templates[0];
+  const canvas = templateCanvasSpec(activeTemplate);
+  const chapterLabel = `${chapter.id.toUpperCase()}「${chapter.title}」`;
+  if (action === "image") {
+    return [
+      "[loeme-task:image-prompt]",
+      `为当前章节 ${chapterLabel} 生成图片提示词，并准备图片生成任务。`,
+      `必须严格跟随当前模板「${template.title}」的画布规格：${canvas.resolution}，比例 ${canvas.aspectRatio}。不要改成其他尺寸或比例。`,
+      `项目：${project?.title || "未命名项目"}`,
+      `章节时间：${chapter.time}`,
+      `旁白文案：${chapter.text || "暂无"}`,
+      `已有图片 Prompt：${chapter.prompt || "暂无"}`,
+      "请只输出一版可直接用于生图工具的最终 Prompt，包含主体、场景、镜头、光线、风格、负面约束和尺寸说明；如果当前还没有真实图片 provider，请不要声称已经生成图片文件，不要输出章节 JSON 或新的章节目录。"
+    ].join("\n");
+  }
+  if (action === "voice") {
+    return [
+      `为当前章节 ${chapterLabel} 生成配音任务。`,
+      `全片默认音色：${currentVideoVoiceLabel()}；配乐：${currentVideoBgmLabel()}。`,
+      `旁白文案：${chapter.text || "暂无"}`,
+      "请检查这段旁白是否适合当前音色，并给出配音生成建议；如果还没有真实 TTS 文件，请不要声称已经生成音频文件。"
+    ].join("\n");
+  }
+  return [
+    `优化当前章节 ${chapterLabel} 的文案。`,
+    `当前模板：${template.title}（${canvas.label}）`,
+    `章节标题：${chapter.title}`,
+    `旁白文案：${chapter.text || "暂无"}`,
+    "请保留故事信息，优化成更适合短视频旁白的版本，并给出可同步更新的图片 Prompt。"
+  ].join("\n");
+}
+
+function handleInspectorAction(action) {
+  if (action === "open") {
+    showToast("素材管理待接入", "后续会打开当前章节素材目录", "work");
+    return;
+  }
+  if (chatRequestInFlight) {
+    showToast("Agent 正在回复", "等当前任务完成后再生成", "work");
+    return;
+  }
+  const chapter = selectedEditableChapter();
+  if (!chapter) {
+    showToast("还没有章节", "先通过左侧对话生成分镜目录", "work");
+    return;
+  }
+  const mode = action === "voice" ? "voice" : action === "image" ? "image" : "chapter";
+  const instruction = buildInspectorAgentInstruction(action, chapter);
+  if (action === "image") {
+    chapter.imageState = "本地预览生成中";
+    chapter.state = "active";
+  } else if (action === "voice") {
+    chapter.voiceState = "配音任务已排队";
+  } else {
+    chapter.state = "active";
+  }
+  setComposeMode(mode, { silent: true });
+  const input = document.querySelector("#prompt-input");
+  const thread = currentThread();
+  if (input) input.value = instruction;
+  thread.draft = instruction;
+  thread.composeMode = mode;
+  persistProjectState();
+  renderProjects();
+  renderChapters();
+  updatePreview();
+  renderInspector();
+  showToast(action === "image" ? "图片生成任务已发送" : "任务已发送", chapter.title, "work");
+  void submitPrompt();
 }
 
 function renderInspector() {
@@ -1026,6 +1404,8 @@ function renderInspector() {
   }
   activeChapterIndex = Math.max(0, Math.min(activeChapterIndex, projectChapters.length - 1));
   const chapter = projectChapters[activeChapterIndex];
+  const canvas = templateCanvasSpec(activeTemplate);
+  const canvasClass = canvas.width > canvas.height ? "canvas-landscape" : "canvas-portrait";
   document.querySelector("#inspector-title").textContent = `${chapter.id.toUpperCase()} · ${chapter.title}`;
   document.querySelector("#inspector-content").innerHTML = `
     <section class="inspector-block chapter-detail-block">
@@ -1036,7 +1416,8 @@ function renderInspector() {
         </div>
         <span class="status-badge warning">${chapter.imageState}</span>
       </div>
-      <div class="asset-preview ${chapter.thumb}"><span>${chapter.imageState}</span></div>
+      <p class="empty-copy">图片尺寸跟随模板：${canvas.label}</p>
+      <div class="asset-preview ${chapter.thumb} ${canvasClass}" ${chapterVisualStyleAttr(chapter)}><span>${chapter.imageState}</span><em>${chapterVisualLabel(chapter)}</em></div>
       <label class="field"><span>图片 Prompt</span><textarea rows="5">${chapter.prompt}</textarea></label>
       <div class="action-row">
         <button type="button" data-inspector-action="image">图片生成</button>
@@ -1053,12 +1434,7 @@ function renderInspector() {
   `;
 
   document.querySelectorAll("[data-inspector-action]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const action = button.dataset.inspectorAction;
-      const mode = action === "voice" ? "voice" : action === "image" ? "image" : "chapter";
-      setComposeMode(mode, { silent: true });
-      showToast("任务已加入对话队列", chapter.title, "work");
-    });
+    button.addEventListener("click", () => handleInspectorAction(button.dataset.inspectorAction));
   });
 }
 
@@ -1330,13 +1706,27 @@ function buildChatMaterials(projectChapters) {
 }
 
 const workIntentPattern = /(开始|执行|生成|创建|新建|优化|修改|改写|整理|导入|检查|应用|写入|更新|切分|分章|分镜|配音|旁白|图片|素材|模板|项目|章节|文案|音乐|BGM|导出|预览|渲染|帮我做|按当前|这个项目|当前章节)/i;
+const chapterGenerationIntentPattern = /(切分|分章|分镜|章节目录|分镜目录|拆成\s*\d+\s*(?:个|段|章|节)?|生成\s*\d+\s*(?:个|段|章|节)?\s*(?:章节|分镜|镜头|场景)|生成.*(?:章节|分镜|镜头|场景)|(?:章节|分镜).*(?:生成|整理|规划)|整理章节|按.*章节|按.*分镜)/i;
+const imageGenerationIntentPattern = /(图片生成|生成图片|生图|图片\s*Prompt|图片提示词|最终\s*Prompt|画面提示词|当前章节.*图片|当前章节.*画面)/i;
 
 function shouldUseProjectContext(prompt) {
   return workIntentPattern.test(prompt || "");
 }
 
+function shouldApplyGeneratedChapters(prompt, reply) {
+  const combined = `${prompt || ""}\n${reply || ""}`;
+  if (!chapterGenerationIntentPattern.test(prompt || "")) return false;
+  if (imageGenerationIntentPattern.test(prompt || "") && !/(分章|分镜|章节|分镜目录|章节目录|切分)/i.test(prompt || "")) return false;
+  return /(?:```(?:json)?[^\n]*(?:loeme-chapters|chapters)|```json|\|.*(?:章节|标题|旁白)|(?:^|\n)(?:#{1,4}\s*)?(?:CH|Scene|Chapter|第\s*[\d一二三四五六七八九十]+))/i.test(combined);
+}
+
+function shouldApplyImagePrompt(prompt, reply) {
+  return imageGenerationIntentPattern.test(`${prompt || ""}\n${reply || ""}`);
+}
+
 function buildLightChatContext(project) {
   const template = templates.find((item) => item.id === activeTemplate) || templates[0];
+  const imageSize = templateCanvasSpec(activeTemplate);
   const mode = composeModes[activeComposeMode] || composeModes.script;
   return {
     project: {
@@ -1348,7 +1738,8 @@ function buildLightChatContext(project) {
     template: {
       id: template.id,
       title: template.title,
-      canvas: template.canvas
+      canvas: template.canvas,
+      imageSize
     },
     composeMode: activeComposeMode,
     composeLabel: mode.label
@@ -1358,6 +1749,7 @@ function buildLightChatContext(project) {
 function buildChatContext(project, prompt) {
   const projectChapters = currentProjectChapters();
   const template = templates.find((item) => item.id === activeTemplate) || templates[0];
+  const imageSize = templateCanvasSpec(activeTemplate);
   const mode = composeModes[activeComposeMode] || composeModes.script;
   const activeChapter = projectChapters[activeChapterIndex] || null;
   const thread = currentThread();
@@ -1375,6 +1767,7 @@ function buildChatContext(project, prompt) {
       title: template.title,
       subtitle: template.subtitle,
       canvas: template.canvas,
+      imageSize,
       tags: template.tags
     },
     composeMode: activeComposeMode,
@@ -1412,7 +1805,7 @@ function buildAgentConfig() {
 
 function applyGeneratedChaptersFromReply(reply, prompt) {
   if (!currentProject()) return 0;
-  if (!shouldUseProjectContext(prompt) || !/(章节|分章|分镜|切分|生成|文案|脚本|故事|目录)/i.test(prompt + "\n" + reply)) return 0;
+  if (!shouldApplyGeneratedChapters(prompt, reply)) return 0;
   const chapters = extractGeneratedChapters(reply);
   if (!chapters.length) return 0;
   const project = currentProject();
@@ -1422,12 +1815,69 @@ function applyGeneratedChaptersFromReply(reply, prompt) {
   project.status = "制作中";
   project.duration = chapters[chapters.length - 1]?.time?.split("-")[1] || project.duration || "0:00";
   activeChapterIndex = 0;
+  previewTimeSec = 0;
+  pausePreviewPlayback({ status: "ready", silent: true });
   persistProjectState();
   renderProjects();
   renderChapters();
   updatePreview();
   renderInspector();
   return chapters.length;
+}
+
+function applyImagePromptFromReply(reply, prompt, context) {
+  if (!currentProject()) return false;
+  if (!shouldApplyImagePrompt(prompt, reply)) return false;
+  const imagePrompt = extractImagePromptFromReply(reply);
+  if (!imagePrompt) return false;
+  const chapters = ensureEditableProjectChapters();
+  if (!chapters.length) return false;
+  const targetId = context?.activeChapter?.id;
+  const chapter = chapters.find((item) => targetId && item.id === targetId) || chapters[activeChapterIndex] || chapters[0];
+  if (!chapter) return false;
+  chapter.prompt = imagePrompt;
+  chapter.imageState = "本地预览已生成";
+  chapter.state = "active";
+  activeChapterIndex = Math.max(0, chapters.findIndex((item) => item.id === chapter.id));
+  persistProjectState();
+  renderProjects();
+  renderChapters();
+  updatePreview();
+  renderInspector();
+  return true;
+}
+
+function extractImagePromptFromReply(reply = "") {
+  const raw = String(reply);
+  const fencedBlocks = [...raw.matchAll(/```(?!json\b)[^\n]*\n([\s\S]*?)```/gi)]
+    .map((match) => cleanImagePromptText(match[1]))
+    .filter((block) => block.length > 24);
+  if (fencedBlocks.length) {
+    return fencedBlocks.sort((a, b) => b.length - a.length)[0];
+  }
+
+  const text = stripMachineBlocksForDisplay(raw);
+  const markerMatch = text.match(/(?:最终(?:生图|图片)?\s*Prompt|图片\s*Prompt|Prompt\s*如下|最终提示词|生图提示词)[^\n:：]*[:：]?\s*([\s\S]+)/i);
+  if (markerMatch) {
+    const section = markerMatch[1].split(/\n\s*(?:建议|说明|任务标记|状态|注意|如果当前|当前只准备|不要声称)/)[0];
+    const cleaned = cleanImagePromptText(section);
+    if (cleaned.length > 24) return cleaned;
+  }
+
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map(cleanImagePromptText)
+    .filter((item) => item.length > 40 && /[，,、]/.test(item) && !/已经生成|不会声称|任务标记/.test(item));
+  return paragraphs[0] || "";
+}
+
+function cleanImagePromptText(value = "") {
+  return String(value)
+    .replace(/^[-*\s#>]+/gm, "")
+    .replace(/^(?:最终(?:生图|图片)?\s*Prompt|图片\s*Prompt|Prompt|生图提示词|最终提示词)\s*[：:]\s*/i, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 1400);
 }
 
 async function requestAgentChat(prompt, context, contextMode) {
@@ -1464,12 +1914,15 @@ async function submitPrompt() {
     return;
   }
   const value = input.value.trim();
-  const config = composeModes[activeComposeMode] || composeModes.script;
   const status = document.querySelector("#composer-status");
   if (!value) {
     if (status) status.textContent = "先输入一条修改指令";
     return;
   }
+  if (chapterGenerationIntentPattern.test(value)) {
+    setComposeMode("script", { silent: true });
+  }
+  const config = composeModes[activeComposeMode] || composeModes.script;
   const thread = currentThread();
   const contextMode = shouldUseProjectContext(value) ? "full" : "light";
   const context = contextMode === "full" ? buildChatContext(project, value) : buildLightChatContext(project);
@@ -1496,8 +1949,13 @@ async function submitPrompt() {
       text: reply || "Agent 没有返回内容。"
     };
     const chapterCount = applyGeneratedChaptersFromReply(reply, value);
+    const imagePromptUpdated = chapterCount ? false : applyImagePromptFromReply(reply, value, context);
     if (status) status.textContent = config.done;
-    showToast(chapterCount ? "章节目录已生成" : "Agent 回复完成", chapterCount ? `${chapterCount} 章已写入当前项目` : currentAgentLabel(), "ok");
+    showToast(
+      chapterCount ? "章节目录已生成" : imagePromptUpdated ? "图片 Prompt 已替换" : "Agent 回复完成",
+      chapterCount ? `${chapterCount} 章已写入当前项目` : imagePromptUpdated ? "当前章节已更新" : currentAgentLabel(),
+      "ok"
+    );
   } catch (error) {
     thread.messages[pendingIndex] = {
       role: "assistant",
@@ -1571,6 +2029,7 @@ function bindEvents() {
     activeProjectId = id;
     activeTemplate = selectedNewTemplate;
     activeChapterIndex = 0;
+    resetPreviewPlayback();
     persistProjectState();
     renderWorkspaceState();
     newProjectModal.hidden = true;
@@ -1597,29 +2056,43 @@ function bindEvents() {
     showToast(chapterPanelCollapsed ? "已收起章节目录" : "已展开章节目录", "章节目录", "work");
   });
 
-  document.querySelector("#preview-play").addEventListener("click", () => {
-    const projectChapters = currentProjectChapters();
-    if (!currentProject() || !projectChapters.length) {
-      showToast("暂无可播放内容", "先通过对话生成文案、分章和图片", "work");
-      return;
-    }
-    const badge = document.querySelector("#preview-status");
-    badge.className = "status-badge warning";
-    badge.textContent = "playing";
-    document.querySelector(".playback-actions").classList.add("is-playing");
-    showToast("开始播放", projectChapters[activeChapterIndex].title, "ok");
+  document.querySelector("#preview-play").addEventListener("click", startPreviewPlayback);
+  document.querySelector("#preview-pause").addEventListener("click", () => pausePreviewPlayback({ status: "paused" }));
+  const playerTrack = document.querySelector("#player-track");
+  playerTrack.addEventListener("click", seekPreviewFromPointer);
+  playerTrack.addEventListener("pointerdown", (event) => {
+    if (!currentProjectDurationSec()) return;
+    previewScrubbing = true;
+    playerTrack.setPointerCapture?.(event.pointerId);
+    seekPreviewFromPointer(event);
   });
-  document.querySelector("#preview-pause").addEventListener("click", () => {
-    const projectChapters = currentProjectChapters();
-    if (!currentProject() || !projectChapters.length) {
-      showToast("暂无可暂停内容", "先通过对话生成章节", "work");
-      return;
+  playerTrack.addEventListener("pointermove", (event) => {
+    if (previewScrubbing) seekPreviewFromPointer(event);
+  });
+  playerTrack.addEventListener("pointerup", (event) => {
+    previewScrubbing = false;
+    playerTrack.releasePointerCapture?.(event.pointerId);
+  });
+  playerTrack.addEventListener("pointercancel", () => {
+    previewScrubbing = false;
+  });
+  playerTrack.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      seekPreviewByStep(event.shiftKey ? -5 : -1);
     }
-    const badge = document.querySelector("#preview-status");
-    badge.className = "status-badge ready";
-    badge.textContent = "paused";
-    document.querySelector(".playback-actions").classList.remove("is-playing");
-    showToast("已暂停", projectChapters[activeChapterIndex].title, "work");
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      seekPreviewByStep(event.shiftKey ? 5 : 1);
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      setPreviewTime(0);
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      setPreviewTime(currentProjectDurationSec());
+    }
   });
   document.querySelector("#render-btn").addEventListener("click", () => {
     const badge = document.querySelector("#preview-status");
@@ -1678,11 +2151,20 @@ function providerStatus(config, requiredFields) {
   return { className: ready ? "ready" : "warning", label: ready ? "configured" : "key needed" };
 }
 
+function stripMachineBlocksForDisplay(value = "") {
+  const text = String(value);
+  return text
+    .replace(/```(?:json)?[^\n]*(?:loeme-chapters|chapters)[^\n]*\n[\s\S]*?```/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function renderMarkdown(value = "") {
   const lines = String(value).replace(/\r\n/g, "\n").split("\n");
   let html = "";
   let listType = null;
   let inCode = false;
+  let codeInfo = "";
   let codeBuffer = [];
   let paragraphBuffer = [];
 
@@ -1699,7 +2181,8 @@ function renderMarkdown(value = "") {
     html += `<${type}>`;
   };
   const flushCode = () => {
-    html += `<pre><code>${escapeHtml(codeBuffer.join("\n"))}</code></pre>`;
+    html += renderCodeBlock(codeBuffer.join("\n"), codeInfo);
+    codeInfo = "";
     codeBuffer = [];
   };
   const flushParagraph = () => {
@@ -1710,7 +2193,7 @@ function renderMarkdown(value = "") {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    const fence = line.match(/^```/);
+    const fence = line.match(/^```\s*(.*)$/);
     if (fence) {
       if (inCode) {
         flushCode();
@@ -1719,6 +2202,7 @@ function renderMarkdown(value = "") {
         flushParagraph();
         closeList();
         inCode = true;
+        codeInfo = fence[1] || "";
         codeBuffer = [];
       }
       continue;
@@ -1791,6 +2275,54 @@ function renderMarkdown(value = "") {
   closeList();
   if (inCode) flushCode();
   return html || "<p></p>";
+}
+
+function renderCodeBlock(code = "", info = "") {
+  const cleanInfo = String(info || "").trim();
+  const cleanCode = String(code || "").trimEnd();
+  if (shouldCollapseCodeBlock(cleanCode, cleanInfo)) {
+    const label = codeBlockSummary(cleanCode, cleanInfo);
+    return `<details class="md-code-details md-machine-block"><summary><span>${escapeHtml(label)}</span><em>展开查看全部</em></summary><pre><code>${escapeHtml(cleanCode)}</code></pre></details>`;
+  }
+  const infoLabel = cleanInfo ? `<span class="md-code-lang">${escapeHtml(cleanInfo)}</span>` : "";
+  return `<pre class="md-code-block">${infoLabel}<code>${escapeHtml(cleanCode)}</code></pre>`;
+}
+
+function shouldCollapseCodeBlock(code = "", info = "") {
+  const normalizedInfo = String(info || "").toLowerCase();
+  if (/(json|loeme-chapters|chapters|yaml|yml)/i.test(normalizedInfo)) return true;
+  if (looksLikeStructuredData(code)) return true;
+  return String(code || "").length > 520;
+}
+
+function codeBlockSummary(code = "", info = "") {
+  const normalizedInfo = String(info || "").toLowerCase();
+  if (/loeme-chapters|chapters/.test(normalizedInfo) || looksLikeChapterJson(code)) return "章节结构数据";
+  if (/json/.test(normalizedInfo) || looksLikeStructuredData(code)) return "结构化数据";
+  if (/ya?ml/.test(normalizedInfo)) return "配置数据";
+  return "长文本内容";
+}
+
+function looksLikeStructuredData(code = "") {
+  const trimmed = String(code || "").trim();
+  if (!trimmed || !/^[\[{]/.test(trimmed)) return false;
+  try {
+    JSON.parse(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function looksLikeChapterJson(code = "") {
+  const trimmed = String(code || "").trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    const chapters = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.chapters) ? parsed.chapters : [];
+    return chapters.some((item) => item && typeof item === "object" && ("title" in item || "text" in item || "prompt" in item));
+  } catch {
+    return /"title"\s*:|"prompt"\s*:|"text"\s*:|"time"\s*:/.test(trimmed);
+  }
 }
 
 function markdownIndentLevel(spaces = "") {

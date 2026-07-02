@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Loeme Loreframe · Studio</title>
-  <link rel="stylesheet" href="./styles.css?v=20260630-side-collapse-config" />
+  <link rel="stylesheet" href="./styles.css?v=20260702-chapter-intent-fix-1" />
 </head>
 <body>
   <div class="app-shell">
@@ -114,7 +114,7 @@
             <button class="player-control" id="preview-play" type="button" aria-label="播放" title="播放"><span class="play-icon" aria-hidden="true"></span></button>
             <div class="player-timeline" aria-label="预览进度">
               <span id="player-current-time">00:18</span>
-              <div class="player-track"><span id="preview-progress"></span></div>
+              <div class="player-track" id="player-track" role="slider" tabindex="0" aria-label="预览进度" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span id="preview-progress"></span></div>
               <span id="player-duration">00:40</span>
             </div>
             <button class="player-control" id="preview-pause" type="button" aria-label="暂停" title="暂停"><span class="pause-icon" aria-hidden="true"></span></button>
@@ -279,6 +279,6 @@
     </section>
   </div>
 
-  <script src="./app.js?v=20260702-chapter-writeback"></script>
+  <script src="./app.js?v=20260702-chapter-intent-fix-1"></script>
 </body>
 </html>

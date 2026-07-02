@@ -56,6 +56,12 @@ The first usable workflow:
 9. Preview the video.
 10. Export MP4 or a local package for that episode.
 
+Image generation and image prompts must inherit the selected template's canvas size and aspect ratio. For example, a vertical folk horror template generates `1080×1920 · 9:16` image tasks, while a long horizontal template generates `1920×1080 · 16:9` image tasks.
+
+Until a real image provider is connected, the Studio treats chapter image generation as local prompt-preview generation: the selected chapter prompt is replaced, the chapter visual preview is refreshed from that prompt, and the chapter list must remain intact.
+
+Phase 1 preview is a chapter-synced local preview. Play / pause, progress seeking, and active chapter switching must work against the episode timeline, but this does not yet imply a full rendered media timeline with real image/audio/subtitle tracks. A later track view can reuse the same playhead and chapter-time model.
+
 The product should feel usable before it becomes fully automatic. Manual confirmation and local files are allowed in Phase 1.
 
 The Studio should not force the user through a rigid wizard. Conversation is the primary control surface: users may define a project, define a template, paste a script, import assets, or ask for chapter planning in any order. The interface should reflect the current state and missing assets rather than enforce a single path.
