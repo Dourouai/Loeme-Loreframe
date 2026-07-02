@@ -412,6 +412,7 @@ let chapterPanelCollapsed = false;
 let chatCollapsed = false;
 let projectCollapsed = false;
 let pendingDeleteProjectId = null;
+let chatRequestInFlight = false;
 
 let projects = loadProjects();
 let projectThreads = loadProjectThreads(projects);
@@ -438,6 +439,7 @@ function normalizeProject(project) {
   const isDefaultProject = defaultProjects.some((item) => item.id === id);
   const contentStatus = project.contentStatus === "generated" || isDefaultProject ? "generated" : "empty";
   const chapterList = Array.isArray(project.chaptersData) ? project.chaptersData.map(normalizeChapter).filter(Boolean) : [];
+  const hasStoredChapters = chapterList.length > 0;
   return {
     id,
     title: String(project.title || "未命名项目"),
@@ -447,7 +449,7 @@ function normalizeProject(project) {
     chapters: String(project.chapters || "0 / 0"),
     template,
     contentStatus,
-    chaptersData: contentStatus === "generated" && !isDefaultProject ? chapterList : []
+    chaptersData: contentStatus === "generated" && (!isDefaultProject || hasStoredChapters) ? chapterList : []
   };
 }
 
@@ -467,6 +469,128 @@ function normalizeChapter(chapter, index) {
     thumb: String(chapter.thumb || "field"),
     state: String(chapter.state || "draft")
   };
+}
+
+function normalizeGeneratedChapter(chapter, index) {
+  const normalized = normalizeChapter({
+    ...chapter,
+    id: chapter.id || `ch-${String(index + 1).padStart(2, "0")}`,
+    time: chapter.time || defaultChapterTime(index),
+    imageState: chapter.imageState || "图片待生成",
+    voiceState: chapter.voiceState || "等待配音",
+    thumb: chapter.thumb || generatedThumb(index),
+    state: index === 0 ? "active" : "draft"
+  }, index);
+  return normalized && (normalized.title || normalized.text || normalized.prompt) ? normalized : null;
+}
+
+function defaultChapterTime(index) {
+  const start = index * 18;
+  return `${secondsToTime(start)}-${secondsToTime(start + 18)}`;
+}
+
+function generatedThumb(index) {
+  return ["field", "straw", "kids", "morning"][index % 4];
+}
+
+function secondsToTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function extractGeneratedChapters(reply = "") {
+  return extractChaptersFromJson(reply) || extractChaptersFromMarkdownTable(reply) || extractChaptersFromMarkdownSections(reply) || [];
+}
+
+function extractChaptersFromJson(reply = "") {
+  const blocks = [...reply.matchAll(/```(?:json)?[^\n]*(?:loeme-chapters|chapters)[^\n]*\n([\s\S]*?)```/gi)]
+    .map((match) => match[1].trim());
+  const genericJsonBlocks = [...reply.matchAll(/```json[^\n]*\n([\s\S]*?)```/gi)].map((match) => match[1].trim());
+  for (const block of [...blocks, ...genericJsonBlocks]) {
+    try {
+      const parsed = JSON.parse(block);
+      const chapters = Array.isArray(parsed) ? parsed : Array.isArray(parsed.chapters) ? parsed.chapters : null;
+      if (!chapters) continue;
+      const normalized = chapters.map(normalizeGeneratedChapter).filter(Boolean);
+      if (normalized.length) return normalized;
+    } catch {
+      // Continue to Markdown fallbacks.
+    }
+  }
+  return null;
+}
+
+function extractChaptersFromMarkdownTable(reply = "") {
+  const lines = String(reply).replace(/\r\n/g, "\n").split("\n");
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    if (!isMarkdownTableRow(lines[index]) || !isMarkdownTableDivider(lines[index + 1])) continue;
+    const headers = splitMarkdownTableRow(lines[index]).map((cell) => cell.toLowerCase());
+    const titleIndex = findHeaderIndex(headers, ["标题", "章节", "title", "chapter"]);
+    const textIndex = findHeaderIndex(headers, ["旁白", "文案", "narration", "text"]);
+    const promptIndex = findHeaderIndex(headers, ["prompt", "提示词", "画面", "图片"]);
+    const timeIndex = findHeaderIndex(headers, ["时间", "time", "时长"]);
+    if (titleIndex < 0 || textIndex < 0) continue;
+
+    const chapters = [];
+    let rowIndex = index + 2;
+    while (rowIndex < lines.length && isMarkdownTableRow(lines[rowIndex]) && lines[rowIndex].trim()) {
+      const cells = splitMarkdownTableRow(lines[rowIndex]);
+      chapters.push({
+        title: cells[titleIndex] || `章节 ${chapters.length + 1}`,
+        text: cells[textIndex] || "",
+        prompt: promptIndex >= 0 ? cells[promptIndex] || "" : "",
+        time: timeIndex >= 0 ? cells[timeIndex] || "" : ""
+      });
+      rowIndex += 1;
+    }
+    const normalized = chapters.map(normalizeGeneratedChapter).filter(Boolean);
+    if (normalized.length) return normalized;
+  }
+  return null;
+}
+
+function findHeaderIndex(headers, keywords) {
+  return headers.findIndex((header) => keywords.some((keyword) => header.includes(keyword.toLowerCase())));
+}
+
+function extractChaptersFromMarkdownSections(reply = "") {
+  const text = String(reply).replace(/\r\n/g, "\n");
+  const sectionPattern = /(?:^|\n)(?:#{1,4}\s*)?(?:(?:CH|Scene|Chapter)[-\s]?(\d+)|第\s*([\d一二三四五六七八九十]+)\s*[章节]|(\d+)[.、])\s*(?:[：:·\-]\s*)?([^\n]*)\n([\s\S]*?)(?=\n(?:#{1,4}\s*)?(?:(?:CH|Scene|Chapter)[-\s]?\d+|第\s*[\d一二三四五六七八九十]+\s*[章节]|\d+[.、])|$)/gi;
+  const chapters = [];
+  for (const match of text.matchAll(sectionPattern)) {
+    const body = match[5] || "";
+    const title = cleanMarkdownLabel(match[4]) || captureField(body, ["标题", "章节标题", "title"]) || `章节 ${chapters.length + 1}`;
+    const chapterText = captureField(body, ["旁白", "旁白文案", "文案", "narration", "text"]) || firstMeaningfulLine(body);
+    const prompt = captureField(body, ["图片 Prompt", "图片提示词", "Prompt", "画面", "图片"]);
+    const time = captureField(body, ["时间", "Time", "时长"]);
+    if (!chapterText && !prompt) continue;
+    chapters.push({ title, text: chapterText, prompt, time });
+  }
+  const normalized = chapters.map(normalizeGeneratedChapter).filter(Boolean);
+  return normalized.length ? normalized : null;
+}
+
+function captureField(body, labels) {
+  for (const label of labels) {
+    const pattern = new RegExp(`${escapeRegExp(label)}\\s*[：:]\\s*([^\\n]+)`, "i");
+    const match = body.match(pattern);
+    if (match) return cleanMarkdownLabel(match[1]);
+  }
+  return "";
+}
+
+function firstMeaningfulLine(body) {
+  const line = body.split("\n").map(cleanMarkdownLabel).find((item) => item && !/^(时间|图片|prompt|标题)\s*[：:]/i.test(item));
+  return line || "";
+}
+
+function cleanMarkdownLabel(value = "") {
+  return String(value).replace(/^[-*\s]+/, "").replace(/\*\*/g, "").replace(/`/g, "").trim();
+}
+
+function escapeRegExp(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function loadProjects() {
@@ -530,8 +654,9 @@ function currentProject() {
 function currentProjectChapters() {
   const project = currentProject();
   if (!project) return [];
+  if (Array.isArray(project.chaptersData) && project.chaptersData.length) return project.chaptersData;
   if (defaultProjects.some((item) => item.id === project.id)) return demoChapters;
-  return Array.isArray(project.chaptersData) ? project.chaptersData : [];
+  return [];
 }
 
 function createProjectThread(project) {
@@ -680,8 +805,8 @@ function renderConversation() {
   const messages = thread.messages || [];
   list.innerHTML = messages.map((message) => `
     <article class="chat-message ${escapeAttr(message.role)}">
-      <strong>${escapeHtml(message.title)}</strong>
-      <p>${escapeHtml(message.text)}</p>
+      <strong class="chat-message-title">${escapeHtml(message.title)}</strong>
+      <div class="chat-message-body">${renderMarkdown(message.text)}</div>
     </article>
   `).join("");
   list.scrollTop = list.scrollHeight;
@@ -1012,16 +1137,28 @@ function syncAgentTrigger() {
   const trigger = document.querySelector("#agent-trigger");
   const avatar = trigger ? trigger.querySelector(".agent-avatar") : null;
   const dot = trigger ? trigger.querySelector(".agent-dot") : null;
+  const isReady = selectedAgent === "deepseek"
+    ? Boolean(providerConfigs.deepseek?.apiKey)
+    : option.status === "ready";
   if (label) label.textContent = option.label;
   if (avatar) {
     avatar.className = "agent-avatar " + option.tone;
     avatar.innerHTML = option.avatar;
   }
   if (dot) {
-    dot.className = "agent-dot " + (option.status === "ready" ? "ready" : "muted");
+    dot.className = "agent-dot " + (isReady ? "ready" : "muted");
   }
   document.querySelectorAll(".agent-option").forEach((button) => {
     button.classList.toggle("active", button.dataset.agent === selectedAgent);
+    const optionDot = button.querySelector(".agent-dot");
+    if (optionDot) {
+      const ready = button.dataset.agent === "deepseek" ? Boolean(providerConfigs.deepseek?.apiKey) : true;
+      optionDot.className = "agent-dot " + (ready ? "ready" : "muted");
+    }
+    const small = button.querySelector("small");
+    if (small && button.dataset.agent === "deepseek") {
+      small.textContent = providerConfigs.deepseek?.apiKey ? "configured" : "config needed";
+    }
   });
 }
 
@@ -1106,6 +1243,7 @@ function handleSettingsAction(action) {
     providerConfigs.deepseek = readConfigFields(document.querySelector('[data-config-provider="deepseek"]'));
     window.localStorage.setItem("loeme.deepseek.config", JSON.stringify(providerConfigs.deepseek));
     renderSettings("agents");
+    syncAgentTrigger();
     showToast("DeepSeek 配置已保存", providerConfigs.deepseek.model || "deepseek-chat", "ok");
     return;
   }
@@ -1164,9 +1302,160 @@ function setComposeMode(mode, options = {}) {
   if (!options.silent) showToast("指令作用域已切换", config.label, "work");
 }
 
-function submitPrompt() {
+function selectedAgentRuntimeId() {
+  return selectedAgent === "deepseek" ? "deepseek-api" : "codex";
+}
+
+function currentAgentLabel() {
+  return (agentOptions[selectedAgent] || agentOptions.codex).label;
+}
+
+function buildChatMaterials(projectChapters) {
+  return projectChapters.flatMap((chapter) => [
+    {
+      type: "image",
+      name: chapter.title,
+      status: chapter.imageState,
+      target: chapter.id,
+      path: chapter.prompt
+    },
+    {
+      type: "narration",
+      name: chapter.title,
+      status: chapter.voiceState,
+      target: chapter.id,
+      path: chapter.voice
+    }
+  ]);
+}
+
+const workIntentPattern = /(开始|执行|生成|创建|新建|优化|修改|改写|整理|导入|检查|应用|写入|更新|切分|分章|分镜|配音|旁白|图片|素材|模板|项目|章节|文案|音乐|BGM|导出|预览|渲染|帮我做|按当前|这个项目|当前章节)/i;
+
+function shouldUseProjectContext(prompt) {
+  return workIntentPattern.test(prompt || "");
+}
+
+function buildLightChatContext(project) {
+  const template = templates.find((item) => item.id === activeTemplate) || templates[0];
+  const mode = composeModes[activeComposeMode] || composeModes.script;
+  return {
+    project: {
+      id: project.id,
+      title: project.title,
+      type: project.type,
+      status: project.status
+    },
+    template: {
+      id: template.id,
+      title: template.title,
+      canvas: template.canvas
+    },
+    composeMode: activeComposeMode,
+    composeLabel: mode.label
+  };
+}
+
+function buildChatContext(project, prompt) {
+  const projectChapters = currentProjectChapters();
+  const template = templates.find((item) => item.id === activeTemplate) || templates[0];
+  const mode = composeModes[activeComposeMode] || composeModes.script;
+  const activeChapter = projectChapters[activeChapterIndex] || null;
+  const thread = currentThread();
+  return {
+    prompt,
+    project: {
+      id: project.id,
+      title: project.title,
+      type: project.type,
+      status: project.status,
+      duration: project.duration
+    },
+    template: {
+      id: template.id,
+      title: template.title,
+      subtitle: template.subtitle,
+      canvas: template.canvas,
+      tags: template.tags
+    },
+    composeMode: activeComposeMode,
+    composeLabel: mode.label,
+    activeChapter,
+    chapters: projectChapters.map((chapter) => ({
+      id: chapter.id,
+      title: chapter.title,
+      time: chapter.time,
+      text: chapter.text,
+      prompt: chapter.prompt,
+      imageState: chapter.imageState,
+      voiceState: chapter.voiceState
+    })),
+    materials: buildChatMaterials(projectChapters),
+    audio: {
+      voice: currentVideoVoiceLabel(),
+      bgm: currentVideoBgmLabel()
+    },
+    recentMessages: (thread.messages || []).slice(-8)
+  };
+}
+
+function buildAgentConfig() {
+  const deepseek = providerConfigs.deepseek || {};
+  return {
+    deepseek: {
+      apiKey: deepseek.apiKey || "",
+      baseUrl: deepseek.baseUrl || "https://api.deepseek.com",
+      model: deepseek.model || "deepseek-chat",
+      temperature: deepseek.temperature || "0.7"
+    }
+  };
+}
+
+function applyGeneratedChaptersFromReply(reply, prompt) {
+  if (!currentProject()) return 0;
+  if (!shouldUseProjectContext(prompt) || !/(章节|分章|分镜|切分|生成|文案|脚本|故事|目录)/i.test(prompt + "\n" + reply)) return 0;
+  const chapters = extractGeneratedChapters(reply);
+  if (!chapters.length) return 0;
+  const project = currentProject();
+  project.chaptersData = chapters;
+  project.contentStatus = "generated";
+  project.chapters = `${chapters.length} / ${chapters.length}`;
+  project.status = "制作中";
+  project.duration = chapters[chapters.length - 1]?.time?.split("-")[1] || project.duration || "0:00";
+  activeChapterIndex = 0;
+  persistProjectState();
+  renderProjects();
+  renderChapters();
+  updatePreview();
+  renderInspector();
+  return chapters.length;
+}
+
+async function requestAgentChat(prompt, context, contextMode) {
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      agent: selectedAgentRuntimeId(),
+      prompt,
+      contextMode,
+      context,
+      config: buildAgentConfig()
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || `Agent request failed: ${response.status}`);
+  }
+  return data.text || "";
+}
+
+async function submitPrompt() {
   const input = document.querySelector("#prompt-input");
   if (!input) return;
+  if (chatRequestInFlight) {
+    showToast("Agent 正在回复", "等当前对话完成后再发送下一条", "work");
+    return;
+  }
   const project = currentProject();
   if (!project) {
     const status = document.querySelector("#composer-status");
@@ -1182,18 +1471,48 @@ function submitPrompt() {
     return;
   }
   const thread = currentThread();
+  const contextMode = shouldUseProjectContext(value) ? "full" : "light";
+  const context = contextMode === "full" ? buildChatContext(project, value) : buildLightChatContext(project);
   thread.messages.push({ role: "user", title: "你", text: value });
-  thread.messages.push({ role: "assistant", title: config.queued, text: "已按“" + config.label + "”作用域加入《" + project.title + "》的任务队列。" });
+  const pendingIndex = thread.messages.push({
+    role: "assistant",
+    title: currentAgentLabel() + " 正在处理",
+    text: contextMode === "full" ? "正在读取当前项目、模板、章节和素材状态..." : "轻量对话中，暂不展开项目背景。"
+  }) - 1;
   thread.draft = "";
   thread.composeMode = activeComposeMode;
   persistProjectState();
   renderConversation();
-  showToast(config.queued, value.slice(0, 42), "work");
-  window.setTimeout(() => {
-    if (status) status.textContent = config.done;
-    showToast(config.done, config.label, "ok");
-  }, 700);
   input.value = "";
+  input.disabled = true;
+  chatRequestInFlight = true;
+  if (status) status.textContent = currentAgentLabel() + (contextMode === "full" ? " · 正在读取上下文" : " · 轻量对话");
+  showToast("已发送给 " + currentAgentLabel(), value.slice(0, 42), "work");
+  try {
+    const reply = await requestAgentChat(value, context, contextMode);
+    thread.messages[pendingIndex] = {
+      role: "assistant",
+      title: currentAgentLabel(),
+      text: reply || "Agent 没有返回内容。"
+    };
+    const chapterCount = applyGeneratedChaptersFromReply(reply, value);
+    if (status) status.textContent = config.done;
+    showToast(chapterCount ? "章节目录已生成" : "Agent 回复完成", chapterCount ? `${chapterCount} 章已写入当前项目` : currentAgentLabel(), "ok");
+  } catch (error) {
+    thread.messages[pendingIndex] = {
+      role: "assistant",
+      title: currentAgentLabel() + " 调用失败",
+      text: error instanceof Error ? error.message : String(error)
+    };
+    if (status) status.textContent = "Agent 调用失败";
+    showToast("Agent 调用失败", currentAgentLabel(), "work");
+  } finally {
+    input.disabled = false;
+    chatRequestInFlight = false;
+    persistProjectState();
+    renderConversation();
+    input.focus();
+  }
 }
 
 function bindEvents() {
@@ -1357,6 +1676,179 @@ function loadProviderConfig(storageKey) {
 function providerStatus(config, requiredFields) {
   const ready = requiredFields.every((field) => String(config[field] || "").trim());
   return { className: ready ? "ready" : "warning", label: ready ? "configured" : "key needed" };
+}
+
+function renderMarkdown(value = "") {
+  const lines = String(value).replace(/\r\n/g, "\n").split("\n");
+  let html = "";
+  let listType = null;
+  let inCode = false;
+  let codeBuffer = [];
+  let paragraphBuffer = [];
+
+  const closeList = () => {
+    if (!listType) return;
+    html += `</${listType}>`;
+    listType = null;
+  };
+  const openList = (type) => {
+    if (listType === type) return;
+    flushParagraph();
+    closeList();
+    listType = type;
+    html += `<${type}>`;
+  };
+  const flushCode = () => {
+    html += `<pre><code>${escapeHtml(codeBuffer.join("\n"))}</code></pre>`;
+    codeBuffer = [];
+  };
+  const flushParagraph = () => {
+    if (!paragraphBuffer.length) return;
+    html += `<p>${renderInlineMarkdown(paragraphBuffer.join(" "))}</p>`;
+    paragraphBuffer = [];
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const fence = line.match(/^```/);
+    if (fence) {
+      if (inCode) {
+        flushCode();
+        inCode = false;
+      } else {
+        flushParagraph();
+        closeList();
+        inCode = true;
+        codeBuffer = [];
+      }
+      continue;
+    }
+
+    if (inCode) {
+      codeBuffer.push(line);
+      continue;
+    }
+
+    if (!line.trim()) {
+      flushParagraph();
+      closeList();
+      continue;
+    }
+
+    const table = readMarkdownTable(lines, index);
+    if (table) {
+      flushParagraph();
+      closeList();
+      html += table.html;
+      index = table.nextIndex;
+      continue;
+    }
+
+    const divider = line.match(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/);
+    if (divider) {
+      flushParagraph();
+      closeList();
+      html += "<hr />";
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      closeList();
+      const level = heading[1].length + 2;
+      html += `<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`;
+      continue;
+    }
+
+    const unordered = line.match(/^(\s*)[-*]\s+(.+)$/);
+    if (unordered) {
+      openList("ul");
+      html += `<li class="md-indent-${markdownIndentLevel(unordered[1])}">${renderInlineMarkdown(unordered[2])}</li>`;
+      continue;
+    }
+
+    const ordered = line.match(/^(\s*)\d+\.\s+(.+)$/);
+    if (ordered) {
+      openList("ol");
+      html += `<li class="md-indent-${markdownIndentLevel(ordered[1])}">${renderInlineMarkdown(ordered[2])}</li>`;
+      continue;
+    }
+
+    const quote = line.match(/^>\s?(.+)$/);
+    if (quote) {
+      flushParagraph();
+      closeList();
+      html += `<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`;
+      continue;
+    }
+
+    closeList();
+    paragraphBuffer.push(line.trim());
+  }
+
+  flushParagraph();
+  closeList();
+  if (inCode) flushCode();
+  return html || "<p></p>";
+}
+
+function markdownIndentLevel(spaces = "") {
+  return Math.min(3, Math.floor(spaces.length / 2));
+}
+
+function readMarkdownTable(lines, startIndex) {
+  const header = lines[startIndex];
+  const divider = lines[startIndex + 1];
+  if (!isMarkdownTableRow(header) || !isMarkdownTableDivider(divider)) return null;
+
+  const headers = splitMarkdownTableRow(header);
+  const rows = [];
+  let index = startIndex + 2;
+  while (index < lines.length && isMarkdownTableRow(lines[index]) && lines[index].trim()) {
+    rows.push(splitMarkdownTableRow(lines[index]));
+    index += 1;
+  }
+
+  const headerHtml = headers.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("");
+  const bodyHtml = rows.map((row) => {
+    const cells = headers.map((_, cellIndex) => `<td>${renderInlineMarkdown(row[cellIndex] || "")}</td>`).join("");
+    return `<tr>${cells}</tr>`;
+  }).join("");
+  return {
+    html: `<div class="md-table-wrap"><table><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`,
+    nextIndex: index - 1
+  };
+}
+
+function isMarkdownTableRow(line = "") {
+  const trimmed = line.trim();
+  return trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.includes("|", 1);
+}
+
+function isMarkdownTableDivider(line = "") {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function splitMarkdownTableRow(line = "") {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+}
+
+function renderInlineMarkdown(value = "") {
+  const codeTokens = [];
+  let text = escapeHtml(value).replace(/`([^`]+)`/g, (_, code) => {
+    const token = `@@CODE${codeTokens.length}@@`;
+    codeTokens.push(`<code>${code}</code>`);
+    return token;
+  });
+  text = text
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, `<a href="$2" target="_blank" rel="noreferrer">$1</a>`)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>");
+  codeTokens.forEach((code, index) => {
+    text = text.replace(`@@CODE${index}@@`, code);
+  });
+  return text;
 }
 
 function escapeHtml(value = "") {

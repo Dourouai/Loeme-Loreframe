@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "pnpm studio",
-    "studio": "python3 -m http.server 3091 --bind 127.0.0.1 --directory apps/studio",
+    "studio": "node apps/studio/server.mjs",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "story-video": "pnpm --filter @story-video/cli start"
